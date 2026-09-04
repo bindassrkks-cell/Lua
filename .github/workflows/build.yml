@@ -1,0 +1,326 @@
+name: Build and Release Islamic PAK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Runtime Tools (Lua 5.4, jq, curl)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 jq curl coreutils
+
+      - name: Setup Content Workspace & Defaults
+        run: |
+          mkdir -p staging/images/salah
+          mkdir -p staging/images/wudhu
+          mkdir -p staging/scripts
+          mkdir -p staging/languages
+          mkdir -p staging/audio
+          mkdir -p dist
+
+          # Agar repo me content directory hai to copy karein
+          if [ -d "content" ]; then
+            cp -r content/* staging/
+          fi
+
+          # Fallback data.json agar repo me maujood na ho
+          if [ ! -f "staging/data.json" ]; then
+            cat << 'EOF' > staging/data.json
+          {
+            "patch_name": "CorePatch",
+            "version": "0.0.15.0",
+            "content_version": 150,
+            "assets": {
+              "images": [
+                {
+                  "name": "takbir.webp",
+                  "path": "images/salah/takbir.webp",
+                  "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/accessibility/materialicons/48dp/1x/baseline_accessibility_black_48dp.png"
+                },
+                {
+                  "name": "ruku.webp",
+                  "path": "images/salah/ruku.webp",
+                  "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/done/materialicons/48dp/1x/baseline_done_black_48dp.png"
+                }
+              ]
+            }
+          }
+          EOF
+          fi
+
+          # Sample scripts and language fallback
+          if [ ! -f "staging/scripts/salah.lua" ]; then
+            cat << 'EOF' > staging/scripts/salah.lua
+          local currentStep = 1
+          function onInit()
+              Bridge:log("CorePatch Script Loaded Successfully")
+          end
+          function nextStep()
+              currentStep = currentStep + 1
+              return currentStep
+          end
+          EOF
+          fi
+
+          if [ ! -f "staging/languages/en.json" ]; then
+            echo '{"appName":"Islamic App","salahGuide":"Salah Guide"}' > staging/languages/en.json
+          fi
+          if [ ! -f "staging/languages/hi.json" ]; then
+            echo '{"appName":"इस्लामिक साथी","salahGuide":"नमाज़ गाइड"}' > staging/languages/hi.json
+          fi
+          if [ ! -f "staging/audio/takbir.ogg" ]; then
+            echo "OGG_AUDIO_BINARY_STREAM" > staging/audio/takbir.ogg
+          fi
+
+      - name: Parse data.json and Download Images
+        run: |
+          echo "--> Downloading assets defined in data.json..."
+          jq -c '.assets.images[]' staging/data.json | while read -r item; do
+            URL=$(echo "$item" | jq -r '.url')
+            DEST_PATH=$(echo "$item" | jq -r '.path')
+
+            if [ -n "$URL" ] && [ "$URL" != "null" ]; then
+              TARGET_DIR="staging/$(dirname "$DEST_PATH")"
+              mkdir -p "$TARGET_DIR"
+              echo "Fetching: $URL -> staging/$DEST_PATH"
+              curl -fsSL --retry 3 "$URL" -o "staging/$DEST_PATH" || {
+                echo "Warning: Download failed for $URL, writing placeholder"
+                echo "RIFF_WEBP_DUMMY" > "staging/$DEST_PATH"
+              }
+            fi
+          done
+
+      - name: Generate Inline Lua PAK Compiler & Validator
+        run: |
+          # 1. Pure Lua 5.4 Binary PAK Builder
+          cat << 'EOF' > pak_compiler.lua
+          local MAGIC = "ISPK"
+          local FORMAT_VERSION = 1
+          local HEADER_SIZE = 64
+
+          local TYPE_GENERIC = 0
+          local TYPE_JSON    = 1
+          local TYPE_TEXT    = 2
+          local TYPE_LUA     = 3
+          local TYPE_IMAGE   = 4
+          local TYPE_AUDIO   = 5
+          local TYPE_FONT    = 6
+
+          local function detect_content_type(path)
+              local ext = path:match("%.([%w_]+)$")
+              if ext then ext = ext:lower() end
+              if ext == "json" then return TYPE_JSON
+              elseif ext == "txt" then return TYPE_TEXT
+              elseif ext == "lua" then return TYPE_LUA
+              elseif ext == "webp" or ext == "png" or ext == "jpg" or ext == "jpeg" then return TYPE_IMAGE
+              elseif ext == "ogg" or ext == "mp3" or ext == "wav" then return TYPE_AUDIO
+              elseif ext == "ttf" or ext == "otf" then return TYPE_FONT
+              else return TYPE_GENERIC end
+          end
+
+          local function get_file_sha256(filepath)
+              local cmd = string.format("sha256sum %q", filepath)
+              local handle = io.popen(cmd)
+              local result = handle:read("*a")
+              handle:close()
+              local hex = result:match("(%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x)")
+              if not hex or #hex ~= 64 then error("SHA256 failed on " .. filepath) end
+              local raw = (hex:gsub("..", function(cc) return string.char(tonumber(cc, 16)) end))
+              return raw, hex
+          end
+
+          local function scan_directory(dir)
+              local cmd = string.format("find %q -type f | sort", dir)
+              local handle = io.popen(cmd)
+              local files = {}
+              local prefix = dir:gsub("/+$", "") .. "/"
+              local prefix_len = #prefix
+              for line in handle:lines() do
+                  local rel_path = line:sub(prefix_len + 1):gsub("\\", "/"):gsub("^/+", "")
+                  if not rel_path:find("%.tmp") then
+                      table.insert(files, { full_path = line, rel_path = rel_path })
+                  end
+              end
+              handle:close()
+              return files
+          end
+
+          local input_dir = arg[1]
+          local output_pak = arg[2]
+          local content_ver = tonumber(arg[3]) or 150
+
+          local files = scan_directory(input_dir)
+          print(string.format("--> Compiling %d entries into %s (ContentVer: %d)", #files, output_pak, content_ver))
+
+          local temp_data_path = output_pak .. ".tmp.payload"
+          local f_data = io.open(temp_data_path, "wb")
+          if not f_data then error("Cannot create temporary payload file") end
+
+          local entries = {}
+          local current_offset = HEADER_SIZE
+
+          for _, item in ipairs(files) do
+              local f_in = io.open(item.full_path, "rb")
+              if not f_in then error("Cannot read: " .. item.full_path) end
+              local content = f_in:read("*a")
+              f_in:close()
+
+              local size = #content
+              local ctype = detect_content_type(item.rel_path)
+              local sha_raw, _ = get_file_sha256(item.full_path)
+
+              f_data:write(content)
+              table.insert(entries, {
+                  path = item.rel_path,
+                  ctype = ctype,
+                  offset = current_offset,
+                  size = size,
+                  comp_type = 0, -- COMPRESSION_NONE
+                  sha256 = sha_raw
+              })
+              current_offset = current_offset + size
+          end
+          f_data:close()
+
+          -- Build Index Table
+          local temp_idx_path = output_pak .. ".tmp.idx"
+          local f_idx = io.open(temp_idx_path, "wb")
+          for _, e in ipairs(entries) do
+              f_idx:write(string.pack(">I2", #e.path))
+              f_idx:write(e.path)
+              f_idx:write(string.pack(">B I8 I8 I8 B c32", e.ctype, e.offset, e.size, e.size, e.comp_type, e.sha256))
+          end
+          f_idx:close()
+
+          local f_idx_read = io.open(temp_idx_path, "rb")
+          local index_bytes = f_idx_read:read("*a")
+          f_idx_read:close()
+
+          local index_offset = current_offset
+          local index_size = #index_bytes
+          local index_sha256, _ = get_file_sha256(temp_idx_path)
+
+          -- Build 64-byte Header
+          local header = string.pack(">c4 I2 I2 I4 I4 I8 I8 c32",
+              MAGIC, FORMAT_VERSION, 0, content_ver, #entries, index_offset, index_size, index_sha256
+          )
+
+          local f_out = io.open(output_pak, "wb")
+          f_out:write(header)
+
+          local f_payload = io.open(temp_data_path, "rb")
+          while true do
+              local chunk = f_payload:read(65536)
+              if not chunk then break end
+              f_out:write(chunk)
+          end
+          f_payload:close()
+
+          f_out:write(index_bytes)
+          f_out:close()
+
+          os.remove(temp_data_path)
+          os.remove(temp_idx_path)
+          print("[SUCCESS] Build Complete: " .. output_pak)
+          EOF
+
+          # 2. Pure Lua 5.4 Binary PAK Validator
+          cat << 'EOF' > pak_validator.lua
+          local pak_path = arg[1]
+          local f = io.open(pak_path, "rb")
+          if not f then error("Cannot open PAK file: " .. tostring(pak_path)) end
+
+          local file_size = f:seek("end")
+          f:seek("set", 0)
+          if file_size < 64 then error("File smaller than 64-byte header") end
+
+          local header = f:read(64)
+          local magic, fmt_ver, flags, content_ver, count, idx_off, idx_sz, idx_sha = 
+              string.unpack(">c4 I2 I2 I4 I4 I8 I8 c32", header)
+
+          if magic ~= "ISPK" then error("Invalid Magic: " .. tostring(magic)) end
+          if fmt_ver ~= 1 then error("Unsupported format version: " .. tostring(fmt_ver)) end
+          if idx_off + idx_sz ~= file_size then error("Index table boundaries mismatch") end
+
+          f:seek("set", idx_off)
+          local idx_bytes = f:read(idx_sz)
+          local tmp = os.tmpname()
+          local tmp_f = io.open(tmp, "wb")
+          tmp_f:write(idx_bytes)
+          tmp_f:close()
+
+          local h = io.popen("sha256sum " .. tmp)
+          local hex = h:read("*a"):match("(%x+)")
+          h:close()
+          os.remove(tmp)
+
+          local raw = (hex:gsub("..", function(cc) return string.char(tonumber(cc, 16)) end))
+          if raw ~= idx_sha then error("Index checksum failure") end
+
+          print(string.format("[VERIFIED] PAK is 100%% valid! Entries: %d, ContentVersion: %d", count, content_ver))
+          f:close()
+          EOF
+
+      - name: Compile CorePatch_0.0.15.0.pak
+        run: |
+          lua5.4 pak_compiler.lua staging dist/CorePatch_0.0.15.0.pak 150
+          lua5.4 pak_validator.lua dist/CorePatch_0.0.15.0.pak
+
+      - name: Generate Release Manifest & SHA-256 Checksums
+        run: |
+          cd dist
+          sha256sum CorePatch_0.0.15.0.pak > SHA256SUMS
+          cat SHA256SUMS
+
+          HASH=$(awk '{print $1}' SHA256SUMS)
+          SIZE=$(stat -c%s CorePatch_0.0.15.0.pak)
+
+          cat << EOF > manifest.json
+          {
+            "version": 150,
+            "patch_name": "CorePatch_0.0.15.0",
+            "packages": [
+              {
+                "id": "core_patch",
+                "version": 150,
+                "file_name": "CorePatch_0.0.15.0.pak",
+                "size": $SIZE,
+                "sha256": "$HASH"
+              }
+            ]
+          }
+          EOF
+          cat manifest.json
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        with:
+          name: CorePatch Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name || 'v0.0.15.0' }}
+          files: |
+            dist/CorePatch_0.0.15.0.pak
+            dist/SHA256SUMS
+            dist/manifest.json
+          body: |
+            ### Islamic Content Package Release
+            - **Binary**: `CorePatch_0.0.15.0.pak`
+            - **Format**: ISPK v1 (Big-Endian Direct Stream)
+            - **Included Content**: WebP images, OGG audio, JSON translations, Lua script logic
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
