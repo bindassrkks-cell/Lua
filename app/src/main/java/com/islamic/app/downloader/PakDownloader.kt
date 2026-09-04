@@ -23,8 +23,8 @@ sealed class UpdateState {
 
 class PakDownloader(private val context: Context) {
     private val client = OkHttpClient()
-    private val manifestUrl = "https://github.com/bindassrkks-cell/Lua/releases/download/main/manifest.json"
-    private val pakBaseUrl = "https://github.com/bindassrkks-cell/Lua/releases/download/main/CorePatch_0.0.15.0.pak"
+    private val manifestUrl = "https://github.com/bindassrkks-cell/Lua/releases/download/v0.0.15.0/manifest.json"
+    private val pakBaseUrl = "https://github.com/bindassrkks-cell/Lua/releases/download/v0.0.15.0/CorePatch_0.0.15.0.pak"
 
     fun syncCorePatch(): Flow<UpdateState> = flow {
         emit(UpdateState.Checking)
