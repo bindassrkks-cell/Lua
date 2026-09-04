@@ -37,16 +37,29 @@ jobs:
           sudo apt-get install -y lua5.4 jq curl coreutils
 
       # =========================================================================
-      # 1. SCAFFOLD COREPATCH CONTENT (Scripts, Audio, Languages, Images)
+      # 1. GENERATE CLEAN .GITIGNORE & SOURCE CODES
       # =========================================================================
-      - name: Scaffold CorePatch Assets & Scripts
+      - name: Scaffold Full Project Structure
         run: |
-          mkdir -p content/scripts
-          mkdir -p content/languages
-          mkdir -p content/audio
-          mkdir -p content/images/salah
-          mkdir -p content/images/wudhu
-          mkdir -p dist
+          # 1.1 Root Gitignore (Prevents 600+ build intermediate files from being pushed)
+          cat << 'EOF' > .gitignore
+          *.iml
+          .gradle
+          /local.properties
+          /.idea/
+          .DS_Store
+          build/
+          */build/
+          dist/
+          staging/
+          *.tmp
+          *.tmp.payload
+          *.tmp.idx
+          pak_compiler.lua
+          EOF
+
+          # 1.2 Content Assets & Scripts
+          mkdir -p content/scripts content/languages content/audio content/images/salah content/images/wudhu
 
           cat << 'EOF' > content/data.json
           {
@@ -95,7 +108,7 @@ jobs:
               if currentStep > 4 then
                   currentStep = 1
               end
-              Bridge:log("Lua transition to step: " .. tostring(currentStep))
+              Bridge:log("Transition to Salah Step: " .. tostring(currentStep))
               return currentStep
           end
           EOF
@@ -104,8 +117,7 @@ jobs:
           {
             "appName": "Islamic Assistant",
             "salahGuide": "Salah Guide",
-            "wudhuGuide": "Wudhu Guide",
-            "nextAction": "Next Step (Lua)"
+            "wudhuGuide": "Wudhu Guide"
           }
           EOF
 
@@ -113,160 +125,13 @@ jobs:
           {
             "appName": "इस्लामिक साथी",
             "salahGuide": "नमाज़ गाइड",
-            "wudhuGuide": "वुज़ू गाइड",
-            "nextAction": "अगला चरण"
+            "wudhuGuide": "वुज़ू गाइड"
           }
           EOF
 
-          # Valid OGG header binary placeholder
           printf '\x4f\x67\x67\x53\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x1e\x01\x76\x6f\x72\x62\x69\x73' > content/audio/takbir.ogg
 
-      # =========================================================================
-      # 2. FETCH REMOTE ASSETS & COMPILE BINARY PAK
-      # =========================================================================
-      - name: Fetch Remote Assets & Build CorePatch.pak
-        run: |
-          mkdir -p staging
-          cp -r content/* staging/
-
-          jq -c '.assets.images[]' staging/data.json | while read -r item; do
-            URL=$(echo "$item" | jq -r '.url')
-            DEST_PATH=$(echo "$item" | jq -r '.path')
-            if [ -n "$URL" ] && [ "$URL" != "null" ]; then
-              mkdir -p "staging/$(dirname "$DEST_PATH")"
-              curl -fsSL --retry 3 "$URL" -o "staging/$DEST_PATH" || {
-                printf '\x52\x49\x46\x46\x24\x00\x00\x00\x57\x45\x42\x50\x56\x50\x38\x20\x18\x00\x00\x00\x30\x01\x00\x9d\x01\x2a\x01\x00\x01\x00\x02\x00\x34\x25\xa4\x00\x03\x70\x00\xfe\xfb\xfd\x50\x00' > "staging/$DEST_PATH"
-              }
-            fi
-          done
-
-          cat << 'EOF' > pak_compiler.lua
-          local MAGIC = "ISPK"
-          local FORMAT_VERSION = 1
-          local HEADER_SIZE = 64
-
-          local function detect_content_type(path)
-              local ext = path:match("%.([%w_]+)$")
-              if ext then ext = ext:lower() end
-              if ext == "json" then return 1
-              elseif ext == "txt" then return 2
-              elseif ext == "lua" then return 3
-              elseif ext == "webp" or ext == "png" or ext == "jpg" then return 4
-              elseif ext == "ogg" or ext == "mp3" then return 5
-              elseif ext == "ttf" or ext == "otf" then return 6
-              else return 0 end
-          end
-
-          local function get_file_sha256(filepath)
-              local handle = io.popen(string.format("sha256sum %q", filepath))
-              local result = handle:read("*a")
-              handle:close()
-              local hex = result:match("(%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x)")
-              local raw = (hex:gsub("..", function(cc) return string.char(tonumber(cc, 16)) end))
-              return raw, hex
-          end
-
-          local function scan_dir(dir)
-              local handle = io.popen(string.format("find %q -type f | sort", dir))
-              local files = {}
-              local prefix = dir:gsub("/+$", "") .. "/"
-              for line in handle:lines() do
-                  local rel_path = line:sub(#prefix + 1):gsub("\\", "/"):gsub("^/+", "")
-                  table.insert(files, { full = line, rel = rel_path })
-              end
-              handle:close()
-              return files
-          end
-
-          local input_dir, output_pak, content_ver = arg[1], arg[2], tonumber(arg[3]) or 150
-          local files = scan_dir(input_dir)
-
-          local temp_data = output_pak .. ".tmp.payload"
-          local f_data = io.open(temp_data, "wb")
-          local entries, current_offset = {}, HEADER_SIZE
-
-          for _, item in ipairs(files) do
-              local f_in = io.open(item.full, "rb")
-              local content = f_in:read("*a")
-              f_in:close()
-
-              local size = #content
-              local ctype = detect_content_type(item.rel)
-              local sha_raw = get_file_sha256(item.full)
-
-              f_data:write(content)
-              table.insert(entries, {
-                  path = item.rel, ctype = ctype, offset = current_offset,
-                  size = size, comp_type = 0, sha256 = sha_raw
-              })
-              current_offset = current_offset + size
-          end
-          f_data:close()
-
-          local temp_idx = output_pak .. ".tmp.idx"
-          local f_idx = io.open(temp_idx, "wb")
-          for _, e in ipairs(entries) do
-              f_idx:write(string.pack(">I2", #e.path))
-              f_idx:write(e.path)
-              f_idx:write(string.pack(">B I8 I8 I8 B c32", e.ctype, e.offset, e.size, e.size, e.comp_type, e.sha256))
-          end
-          f_idx:close()
-
-          local f_idx_r = io.open(temp_idx, "rb")
-          local idx_bytes = f_idx_r:read("*a")
-          f_idx_r:close()
-          local idx_sha = get_file_sha256(temp_idx)
-
-          local header = string.pack(">c4 I2 I2 I4 I4 I8 I8 c32",
-              MAGIC, FORMAT_VERSION, 0, content_ver, #entries, current_offset, #idx_bytes, idx_sha
-          )
-
-          local f_out = io.open(output_pak, "wb")
-          f_out:write(header)
-          local f_p = io.open(temp_data, "rb")
-          while true do
-              local chunk = f_p:read(65536)
-              if not chunk then break end
-              f_out:write(chunk)
-          end
-          f_p:close()
-          f_out:write(idx_bytes)
-          f_out:close()
-
-          os.remove(temp_data)
-          os.remove(temp_idx)
-          print("[SUCCESS] CorePatch Built: " .. output_pak)
-          EOF
-
-          lua5.4 pak_compiler.lua staging dist/CorePatch_0.0.15.0.pak 150
-
-          cd dist
-          sha256sum CorePatch_0.0.15.0.pak > SHA256SUMS
-          HASH=$(awk '{print $1}' SHA256SUMS)
-          SIZE=$(stat -c%s CorePatch_0.0.15.0.pak)
-
-          cat << EOF > manifest.json
-          {
-            "version": 150,
-            "patch_name": "CorePatch_0.0.15.0",
-            "packages": [
-              {
-                "id": "core_patch",
-                "version": 150,
-                "file_name": "CorePatch_0.0.15.0.pak",
-                "size": $SIZE,
-                "sha256": "$HASH"
-              }
-            ]
-          }
-          EOF
-          cd ..
-
-      # =========================================================================
-      # 3. COMPLETE ANDROID SOURCE TREE SCAFFOLDING
-      # =========================================================================
-      - name: Scaffold Full Android Source Code
-        run: |
+          # 1.3 Android App Scaffolding
           mkdir -p gradle/wrapper
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/java/com/islamic/app/ui/theme
@@ -808,7 +673,7 @@ jobs:
           }
           EOF
 
-          # UI Fixed HomeScreen: Fixes the card text squeeze issue (2 Rakahs 05:39)
+          # UI Text Wrapping Fixed HomeScreen (Prevents 05:3 / 9 from wrapping)
           cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/HomeScreen.kt
           package com.islamic.app.ui.screens
 
@@ -912,7 +777,6 @@ jobs:
           }
           EOF
 
-          # Connected SalahScreen: Executes Lua step increments and plays PAK OGG Takbir
           cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/SalahScreen.kt
           package com.islamic.app.ui.screens
 
@@ -1270,7 +1134,166 @@ jobs:
           EOF
 
       # =========================================================================
-      # 4. BUILD APK USING GRADLE WRAPPER
+      # 2. COMMIT & PUSH CLEAN SOURCE CODE FIRST (Fixes refspec & build junk)
+      # =========================================================================
+      - name: Commit & Push Source Code First
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Stage only valid sources; .gitignore stops build outputs
+          git add .gitignore content app build.gradle.kts settings.gradle.kts gradle.properties .github
+
+          if ! git diff --staged --quiet; then
+            git commit -m "feat: complete Islamic app source code and PAK engine [skip ci]"
+            # Explicit full refspec avoids 'matches more than one' error
+            git push origin HEAD:refs/heads/main --force
+          else
+            echo "Working tree is clean, nothing to commit."
+          fi
+
+      # =========================================================================
+      # 3. BUILD COREPATCH BINARY PAK
+      # =========================================================================
+      - name: Build CorePatch PAK
+        run: |
+          mkdir -p staging dist
+          cp -r content/* staging/
+
+          jq -c '.assets.images[]' staging/data.json | while read -r item; do
+            URL=$(echo "$item" | jq -r '.url')
+            DEST_PATH=$(echo "$item" | jq -r '.path')
+            if [ -n "$URL" ] && [ "$URL" != "null" ]; then
+              mkdir -p "staging/$(dirname "$DEST_PATH")"
+              curl -fsSL --retry 3 "$URL" -o "staging/$DEST_PATH" || {
+                printf '\x52\x49\x46\x46\x24\x00\x00\x00\x57\x45\x42\x50\x56\x50\x38\x20\x18\x00\x00\x00\x30\x01\x00\x9d\x01\x2a\x01\x00\x01\x00\x02\x00\x34\x25\xa4\x00\x03\x70\x00\xfe\xfb\xfd\x50\x00' > "staging/$DEST_PATH"
+              }
+            fi
+          done
+
+          cat << 'EOF' > pak_compiler.lua
+          local MAGIC = "ISPK"
+          local FORMAT_VERSION = 1
+          local HEADER_SIZE = 64
+
+          local function detect_content_type(path)
+              local ext = path:match("%.([%w_]+)$")
+              if ext then ext = ext:lower() end
+              if ext == "json" then return 1
+              elseif ext == "txt" then return 2
+              elseif ext == "lua" then return 3
+              elseif ext == "webp" or ext == "png" or ext == "jpg" then return 4
+              elseif ext == "ogg" or ext == "mp3" then return 5
+              elseif ext == "ttf" or ext == "otf" then return 6
+              else return 0 end
+          end
+
+          local function get_file_sha256(filepath)
+              local handle = io.popen(string.format("sha256sum %q", filepath))
+              local result = handle:read("*a")
+              handle:close()
+              local hex = result:match("(%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x)")
+              return (hex:gsub("..", function(cc) return string.char(tonumber(cc, 16)) end)), hex
+          end
+
+          local function scan_dir(dir)
+              local handle = io.popen(string.format("find %q -type f | sort", dir))
+              local files = {}
+              local prefix = dir:gsub("/+$", "") .. "/"
+              for line in handle:lines() do
+                  local rel_path = line:sub(#prefix + 1):gsub("\\", "/"):gsub("^/+", "")
+                  table.insert(files, { full = line, rel = rel_path })
+              end
+              handle:close()
+              return files
+          end
+
+          local input_dir, output_pak, content_ver = arg[1], arg[2], tonumber(arg[3]) or 150
+          local files = scan_dir(input_dir)
+
+          local temp_data = output_pak .. ".tmp.payload"
+          local f_data = io.open(temp_data, "wb")
+          local entries, current_offset = {}, HEADER_SIZE
+
+          for _, item in ipairs(files) do
+              local f_in = io.open(item.full, "rb")
+              local content = f_in:read("*a")
+              f_in:close()
+
+              local size = #content
+              local ctype = detect_content_type(item.rel)
+              local sha_raw = get_file_sha256(item.full)
+
+              f_data:write(content)
+              table.insert(entries, {
+                  path = item.rel, ctype = ctype, offset = current_offset,
+                  size = size, comp_type = 0, sha256 = sha_raw
+              })
+              current_offset = current_offset + size
+          end
+          f_data:close()
+
+          local temp_idx = output_pak .. ".tmp.idx"
+          local f_idx = io.open(temp_idx, "wb")
+          for _, e in ipairs(entries) do
+              f_idx:write(string.pack(">I2", #e.path))
+              f_idx:write(e.path)
+              f_idx:write(string.pack(">B I8 I8 I8 B c32", e.ctype, e.offset, e.size, e.size, e.comp_type, e.sha256))
+          end
+          f_idx:close()
+
+          local f_idx_r = io.open(temp_idx, "rb")
+          local idx_bytes = f_idx_r:read("*a")
+          f_idx_r:close()
+          local idx_sha = get_file_sha256(temp_idx)
+
+          local header = string.pack(">c4 I2 I2 I4 I4 I8 I8 c32",
+              MAGIC, FORMAT_VERSION, 0, content_ver, #entries, current_offset, #idx_bytes, idx_sha
+          )
+
+          local f_out = io.open(output_pak, "wb")
+          f_out:write(header)
+          local f_p = io.open(temp_data, "rb")
+          while true do
+              local chunk = f_p:read(65536)
+              if not chunk then break end
+              f_out:write(chunk)
+          end
+          f_p:close()
+          f_out:write(idx_bytes)
+          f_out:close()
+
+          os.remove(temp_data)
+          os.remove(temp_idx)
+          print("[SUCCESS] CorePatch PAK Compiled: " .. output_pak)
+          EOF
+
+          lua5.4 pak_compiler.lua staging dist/CorePatch_0.0.15.0.pak 150
+
+          cd dist
+          sha256sum CorePatch_0.0.15.0.pak > SHA256SUMS
+          HASH=$(awk '{print $1}' SHA256SUMS)
+          SIZE=$(stat -c%s CorePatch_0.0.15.0.pak)
+
+          cat << EOF > manifest.json
+          {
+            "version": 150,
+            "patch_name": "CorePatch_0.0.15.0",
+            "packages": [
+              {
+                "id": "core_patch",
+                "version": 150,
+                "file_name": "CorePatch_0.0.15.0.pak",
+                "size": $SIZE,
+                "sha256": "$HASH"
+              }
+            ]
+          }
+          EOF
+          cd ..
+
+      # =========================================================================
+      # 4. COMPILE ANDROID DEBUG APK
       # =========================================================================
       - name: Build Android Debug APK
         run: |
@@ -1280,24 +1303,9 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk dist/IslamicApp_0.0.15.0.apk
 
       # =========================================================================
-      # 5. COMMIT FULL SOURCE TREE BACK TO GITHUB REPOSITORY
+      # 5. PUBLISH RELEASE ASSETS
       # =========================================================================
-      - name: Push Scaffolded Code to GitHub Repository
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add content app gradle gradlew gradlew.bat build.gradle.kts settings.gradle.kts gradle.properties
-          if ! git diff --staged --quiet; then
-            git commit -m "chore: scaffold complete Android source & CorePatch assets [skip ci]"
-            git push origin HEAD:main --force
-          else
-            echo "Working tree clean, skipping push."
-          fi
-
-      # =========================================================================
-      # 6. PUBLISH ARTIFACTS TO GITHUB RELEASES
-      # =========================================================================
-      - name: Publish CorePatch PAK & APK to GitHub Release
+      - name: Publish Artifacts to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           name: CorePatch & Islamic App 0.0.15.0
@@ -1307,11 +1315,6 @@ jobs:
             dist/SHA256SUMS
             dist/manifest.json
             dist/IslamicApp_0.0.15.0.apk
-          body: |
-            ### Release v0.0.15.0
-            - **`CorePatch_0.0.15.0.pak`**: Lua compiled binary payload with WebP, OGG and scripts.
-            - **`IslamicApp_0.0.15.0.apk`**: Pure Dark Material 3 Jetpack Compose app.
-            - **`manifest.json` & `SHA256SUMS`**: Dynamic OTA integrity digests.
           draft: false
           prerelease: false
         env:
