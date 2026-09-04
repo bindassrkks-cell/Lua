@@ -1,0 +1,34 @@
+{
+  "patch_name": "CorePatch",
+  "version": "0.0.15.0",
+  "content_version": 150,
+  "assets": {
+    "images": [
+      {
+        "name": "takbir.webp",
+        "path": "images/salah/takbir.webp",
+        "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/accessibility/materialicons/48dp/1x/baseline_accessibility_black_48dp.png"
+      },
+      {
+        "name": "ruku.webp",
+        "path": "images/salah/ruku.webp",
+        "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/done/materialicons/48dp/1x/baseline_done_black_48dp.png"
+      },
+      {
+        "name": "step1.webp",
+        "path": "images/wudhu/step1.webp",
+        "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/check_circle/materialicons/48dp/1x/baseline_check_circle_black_48dp.png"
+      },
+      {
+        "name": "step2.webp",
+        "path": "images/wudhu/step2.webp",
+        "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/touch_app/materialicons/48dp/1x/baseline_touch_app_black_48dp.png"
+      },
+      {
+        "name": "step3.webp",
+        "path": "images/wudhu/step3.webp",
+        "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/water_drop/materialicons/48dp/1x/baseline_water_drop_black_48dp.png"
+      }
+    ]
+  }
+}

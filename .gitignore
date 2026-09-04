@@ -1,0 +1,13 @@
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+build/
+*/build/
+dist/
+staging/
+*.tmp
+*.tmp.payload
+*.tmp.idx
+pak_compiler.lua
