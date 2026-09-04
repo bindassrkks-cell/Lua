@@ -31,17 +31,17 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install System Utilities (Lua 5.4, jq, curl)
+      - name: Install System Utilities (Lua 5.4, jq, curl, gradle)
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.4 jq curl coreutils
+          sudo apt-get install -y lua5.4 jq curl coreutils gradle
 
       # =========================================================================
-      # 1. GENERATE CLEAN .GITIGNORE & SOURCE CODES
+      # 1. GENERATE CLEAN REPO FILES & SCAFFOLD APP BEFORE COMPILATION
       # =========================================================================
       - name: Scaffold Full Project Structure
         run: |
-          # 1.1 Root Gitignore (Prevents 600+ build intermediate files from being pushed)
+          # 1.1 Root .gitignore (build files repo me nahi jayengi)
           cat << 'EOF' > .gitignore
           *.iml
           .gradle
@@ -558,8 +558,8 @@ jobs:
 
           class PakDownloader(private val context: Context) {
               private val client = OkHttpClient()
-              private val manifestUrl = "https://github.com/bindassrkks-cell/Lua/releases/download/main/manifest.json"
-              private val pakBaseUrl = "https://github.com/bindassrkks-cell/Lua/releases/download/main/CorePatch_0.0.15.0.pak"
+              private val manifestUrl = "https://github.com/bindassrkks-cell/Lua/releases/download/v0.0.15.0/manifest.json"
+              private val pakBaseUrl = "https://github.com/bindassrkks-cell/Lua/releases/download/v0.0.15.0/CorePatch_0.0.15.0.pak"
 
               fun syncCorePatch(): Flow<UpdateState> = flow {
                   emit(UpdateState.Checking)
@@ -673,7 +673,6 @@ jobs:
           }
           EOF
 
-          # UI Text Wrapping Fixed HomeScreen (Prevents 05:3 / 9 from wrapping)
           cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/HomeScreen.kt
           package com.islamic.app.ui.screens
 
@@ -1133,21 +1132,28 @@ jobs:
           }
           EOF
 
+          # 1.4 Generate Gradle Wrapper so repo has full build toolchain
+          gradle wrapper --gradle-version 8.9 --distribution-type bin
+          chmod +x gradlew
+
       # =========================================================================
-      # 2. COMMIT & PUSH CLEAN SOURCE CODE FIRST (Fixes refspec & build junk)
+      # 2. COMMIT & PUSH TO REPO IMMEDIATELY (DELETES TAG CONFLICT)
       # =========================================================================
-      - name: Commit & Push Source Code First
+      - name: Force Push Clean Source Code to Main Branch
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Stage only valid sources; .gitignore stops build outputs
-          git add .gitignore content app build.gradle.kts settings.gradle.kts gradle.properties .github
+          # 2.1 Conflicting tag delete karein taaki GitHub UI branch 'main' ko hi load kare
+          git push origin :refs/tags/main || true
 
-          if ! git diff --staged --quiet; then
-            git commit -m "feat: complete Islamic app source code and PAK engine [skip ci]"
-            # Explicit full refspec avoids 'matches more than one' error
+          # 2.2 Stage only clean source code and wrapper
+          git add -A
+
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "feat: complete Islamic app source code, Gradle wrapper and PAK engine [skip ci]"
             git push origin HEAD:refs/heads/main --force
+            echo "SUCCESS: Source files committed and pushed to main branch."
           else
             echo "Working tree is clean, nothing to commit."
           fi
@@ -1297,13 +1303,11 @@ jobs:
       # =========================================================================
       - name: Build Android Debug APK
         run: |
-          gradle wrapper --gradle-version 8.9 --distribution-type bin
-          chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk dist/IslamicApp_0.0.15.0.apk
 
       # =========================================================================
-      # 5. PUBLISH RELEASE ASSETS
+      # 5. PUBLISH RELEASE ARTIFACTS
       # =========================================================================
       - name: Publish Artifacts to GitHub Releases
         uses: softprops/action-gh-release@v2
