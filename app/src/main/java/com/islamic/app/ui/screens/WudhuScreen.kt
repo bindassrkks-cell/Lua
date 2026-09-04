@@ -26,14 +26,14 @@ data class WudhuStepUi(val title: String, val desc: String, val imagePath: Strin
 fun WudhuScreen(onBack: () -> Unit) {
     val steps = listOf(
         WudhuStepUi("Niyyah (Intention)", "The intention for performing wudu is made in the heart...", "images/wudhu/step1.webp"),
-        WudhuStepUi("Wash hands three times", "First wash the right hand, then the left, up to wrists...", "images/wudhu/step2.webp"),
-        WudhuStepUi("Rinse mouth three times", "Rinse mouth thoroughly using clean water...", "images/wudhu/step3.webp")
+        WudhuStepUi("Wash hands three times", "First wash the right hand, then the left, up to wrists...", "images/wudhu/step1.webp"),
+        WudhuStepUi("Rinse mouth three times", "Rinse mouth thoroughly using clean water...", "images/wudhu/step1.webp")
     )
 
     Column(modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(horizontal = 16.dp)) {
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextPureWhite) }
-            Text("Wudhu guide", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = null, tint = TextPureWhite) }
+            Text("Wudhu Guide", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
             itemsIndexed(steps) { index, step ->

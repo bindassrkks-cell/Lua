@@ -10,7 +10,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.islamic.app.pak.LuaEngine
 import com.islamic.app.pak.PakManager
+import com.islamic.app.social.NativeSocialEngine
 import com.islamic.app.ui.screens.*
 import com.islamic.app.ui.theme.*
 
@@ -18,10 +20,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PakManager.init(this)
+        LuaEngine.init(this)
+        NativeSocialEngine.loadNativeLib(this)
 
         setContent {
             IslamicAppTheme {
                 var currentRoute by remember { mutableStateOf("home") }
+                var showSettingsDialog by remember { mutableStateOf(false) }
+
                 Scaffold(
                     bottomBar = {
                         NavigationBar(containerColor = DarkSurfaceCard) {
@@ -59,10 +65,10 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                             NavigationBarItem(
-                                selected = currentRoute == "settings",
-                                onClick = { currentRoute = "settings" },
-                                icon = { Icon(Icons.Default.CloudDownload, contentDescription = "Updates") },
-                                label = { Text("Updates") },
+                                selected = currentRoute == "social",
+                                onClick = { currentRoute = "social" },
+                                icon = { Icon(Icons.Default.OndemandVideo, contentDescription = "Social") },
+                                label = { Text("Social") },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = EmeraldPrimary, unselectedIconColor = TextMuted,
                                     selectedTextColor = EmeraldPrimary, unselectedTextColor = TextMuted,
@@ -74,10 +80,14 @@ class MainActivity : ComponentActivity() {
                 ) { padding ->
                     Box(modifier = Modifier.padding(padding)) {
                         when (currentRoute) {
-                            "home" -> HomeScreen(onNavigate = { currentRoute = it })
+                            "home" -> HomeScreen(onOpenSettings = { showSettingsDialog = true })
                             "salah" -> SalahScreen(onBack = { currentRoute = "home" })
                             "wudhu" -> WudhuScreen(onBack = { currentRoute = "home" })
-                            "settings" -> SettingsScreen()
+                            "social" -> SocialScreen(onOpenSettings = { showSettingsDialog = true })
+                        }
+
+                        if (showSettingsDialog) {
+                            SettingsDialog(onClose = { showSettingsDialog = false })
                         }
                     }
                 }

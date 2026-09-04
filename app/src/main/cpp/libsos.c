@@ -1,0 +1,45 @@
+#include <jni.h>
+#include <string.h>
+
+JNIEXPORT jstring JNICALL
+Java_com_islamic_app_social_NativeSocialEngine_getSocialFeedJson(JNIEnv* env, jobject thiz) {
+    const char* json = "["
+    "{"
+    "  \"id\": \"post_1\","
+    "  \"title\": \"Surah Al-Baqarah (2:255) - Ayat ul Kursi in HD\","
+    "  \"channel\": \"Al-Quran Official\","
+    "  \"views\": \"2.4M views\","
+    "  \"time\": \"4 hours ago\","
+    "  \"duration\": \"04:22\","
+    "  \"image\": \"images/salah/ruku.webp\","
+    "  \"arabic\": \"اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ\","
+    "  \"translation\": \"Allah! There is no deity except Him, the Ever-Living, the Sustainer of existence. Neither drowsiness overtakes Him nor sleep.\","
+    "  \"audio\": \"audio/takbir.ogg\""
+    "},"
+    "{"
+    "  \"id\": \"post_2\","
+    "  \"title\": \"Beautiful Fajr Azan from Makkah Al-Mukarramah Live\","
+    "  \"channel\": \"Makkah Live Channel\","
+    "  \"views\": \"890K views\","
+    "  \"time\": \"1 day ago\","
+    "  \"duration\": \"03:45\","
+    "  \"image\": \"images/salah/takbir.webp\","
+    "  \"arabic\": \"حَيَّ عَلَى الصَّلَاةِ - حَيَّ عَلَى الْفَلَاحِ\","
+    "  \"translation\": \"Come to prayer, come to success. Prayer is better than sleep.\","
+    "  \"audio\": \"audio/azan.ogg\""
+    "},"
+    "{"
+    "  \"id\": \"post_3\","
+    "  \"title\": \"Daily Morning & Evening Azkar for Barakah & Protection\","
+    "  \"channel\": \"Darussalam Studio\","
+    "  \"views\": \"430K views\","
+    "  \"time\": \"2 days ago\","
+    "  \"duration\": \"06:12\","
+    "  \"image\": \"images/wudhu/step1.webp\","
+    "  \"arabic\": \"سُبْحَانَ اللَّهِ وَبِحَمْدِهِ سُبْحَانَ اللَّهِ الْعَظِيمِ\","
+    "  \"translation\": \"Glory be to Allah and His is the praise, glory be to Allah the Magnificent.\","
+    "  \"audio\": \"audio/takbir.ogg\""
+    "}"
+    "]";
+    return (*env)->NewStringUTF(env, json);
+}

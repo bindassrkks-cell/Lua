@@ -12,27 +12,27 @@ object PakAudioPlayer {
     fun play(context: Context, audioPath: String, onComplete: () -> Unit = {}) {
         stop()
         if (!PakManager.exists(audioPath)) {
-            Log.w("PakAudioPlayer", "Audio not found in PAK: $audioPath")
+            Log.w("PakAudioPlayer", "Audio not in PAK: $audioPath")
             return
         }
 
         try {
             val bytes = PakManager.readBytes(audioPath)
-            val tempAudio = File(context.cacheDir, "temp_stream.ogg")
-            FileOutputStream(tempAudio).use { it.write(bytes) }
+            val tempFile = File(context.cacheDir, "stream_${System.currentTimeMillis()}.ogg")
+            FileOutputStream(tempFile).use { it.write(bytes) }
 
             mediaPlayer = MediaPlayer().apply {
-                setDataSource(tempAudio.absolutePath)
+                setDataSource(tempFile.absolutePath)
                 prepare()
                 start()
                 setOnCompletionListener {
                     stop()
-                    tempAudio.delete()
+                    tempFile.delete()
                     onComplete()
                 }
             }
         } catch (e: Exception) {
-            Log.e("PakAudioPlayer", "Audio error: ${e.message}")
+            Log.e("PakAudioPlayer", "Playback error: ${e.message}")
         }
     }
 

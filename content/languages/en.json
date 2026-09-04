@@ -1,5 +1,7 @@
 {
   "appName": "Islamic Assistant",
   "salahGuide": "Salah Guide",
-  "wudhuGuide": "Wudhu Guide"
+  "wudhuGuide": "Wudhu Guide",
+  "socialTitle": "Islamic Community",
+  "playAudio": "Listen Recitation"
 }

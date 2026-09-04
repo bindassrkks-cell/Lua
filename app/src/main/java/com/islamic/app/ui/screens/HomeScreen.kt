@@ -1,5 +1,8 @@
 package com.islamic.app.ui.screens
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -11,61 +14,89 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.islamic.app.prayer.CalculatedTimes
+import com.islamic.app.prayer.LocationHelper
+import com.islamic.app.prayer.PrayerEngine
+import com.islamic.app.prayer.UserLocation
 import com.islamic.app.ui.theme.*
+import kotlinx.coroutines.delay
+import java.util.Calendar
 
-data class PrayerInfo(val name: String, val rakahs: String, val time: String, val icon: ImageVector, val isCurrent: Boolean = false)
+data class PrayerItemUi(val name: String, val rakahs: String, val time: String, val icon: ImageVector, val isCurrent: Boolean)
 
 @Composable
-fun HomeScreen(onNavigate: (String) -> Unit) {
-    val prayers = listOf(
-        PrayerInfo("Fajr", "2 Rakahs", "05:39", Icons.Default.WbTwilight),
-        PrayerInfo("Dhuhr", "4 Rakahs", "11:48", Icons.Default.WbSunny),
-        PrayerInfo("Asr", "4 Rakahs", "13:39", Icons.Default.FilterDrama, isCurrent = true),
-        PrayerInfo("Maghrib", "3 Rakahs", "15:57", Icons.Default.NightsStay),
-        PrayerInfo("Isha", "4 Rakahs", "17:28", Icons.Default.Bedtime)
+fun HomeScreen(onOpenSettings: () -> Unit) {
+    val context = LocalContext.current
+    var userLocation by remember { mutableStateOf(UserLocation("London", 51.5074, -0.1278)) }
+    var times by remember { mutableStateOf<CalculatedTimes?>(null) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {}
+
+    LaunchedEffect(Unit) {
+        permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        userLocation = LocationHelper.getDeviceLocation(context)
+    }
+
+    LaunchedEffect(userLocation) {
+        while (true) {
+            times = PrayerEngine.calculate(userLocation.latitude, userLocation.longitude)
+            delay(1000L)
+        }
+    }
+
+    val currentTimes = times ?: remember { PrayerEngine.calculate(userLocation.latitude, userLocation.longitude) }
+    fun fmt(c: Calendar) = String.format("%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
+
+    val prayerList = listOf(
+        PrayerItemUi("Fajr", "2 Rakahs", fmt(currentTimes.fajr), Icons.Default.WbTwilight, currentTimes.currentPrayer == "Fajr"),
+        PrayerItemUi("Dhuhr", "4 Rakahs", fmt(currentTimes.dhuhr), Icons.Default.WbSunny, currentTimes.currentPrayer == "Dhuhr"),
+        PrayerItemUi("Asr", "4 Rakahs", fmt(currentTimes.asr), Icons.Default.FilterDrama, currentTimes.currentPrayer == "Asr"),
+        PrayerItemUi("Maghrib", "3 Rakahs", fmt(currentTimes.maghrib), Icons.Default.NightsStay, currentTimes.currentPrayer == "Maghrib"),
+        PrayerItemUi("Isha", "4 Rakahs", fmt(currentTimes.isha), Icons.Default.Bedtime, currentTimes.currentPrayer == "Isha")
     )
 
-    Column(
-        modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(horizontal = 16.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(horizontal = 16.dp)) {
         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(50), color = DarkSurfaceCard, border = androidx.compose.foundation.BorderStroke(1.dp, DarkCardBorder)) {
                 Row(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.LocationOn, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("London", color = TextPureWhite, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(userLocation.city, color = TextPureWhite, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.width(4.dp))
                     Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = TextMuted, modifier = Modifier.size(18.dp))
                 }
             }
-            IconButton(onClick = { onNavigate("settings") }, modifier = Modifier.clip(CircleShape).background(DarkSurfaceCard).border(1.dp, DarkCardBorder, CircleShape)) {
+            IconButton(onClick = onOpenSettings, modifier = Modifier.clip(CircleShape).background(DarkSurfaceCard).border(1.dp, DarkCardBorder, CircleShape)) {
                 Icon(Icons.Default.Settings, contentDescription = "Settings", tint = TextPureWhite)
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
         Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Default.FilterDrama, contentDescription = null, tint = TextMuted, modifier = Modifier.size(24.dp))
             Spacer(modifier = Modifier.height(6.dp))
-            Text("Asr will end in", color = TextMuted, fontSize = 14.sp)
+            Text("${currentTimes.currentPrayer} will end in", color = TextMuted, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(2.dp))
-            Text("01h:42m", color = TextPureWhite, fontSize = 42.sp, fontWeight = FontWeight.Bold)
+            Text(currentTimes.remainingFormatted, color = TextPureWhite, fontSize = 38.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(4.dp))
-            Text("Maghrib starts at 15:57", color = TextMuted, fontSize = 13.sp)
+            Text("${currentTimes.nextPrayer} starts at ${currentTimes.nextPrayerTimeFormatted}", color = TextMuted, fontSize = 13.sp)
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(18.dp))
         LazyVerticalGrid(columns = GridCells.Fixed(2), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            items(prayers) { prayer ->
+            items(prayerList) { prayer ->
                 Card(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
@@ -83,11 +114,7 @@ fun HomeScreen(onNavigate: (String) -> Unit) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(prayer.name, color = TextPureWhite, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text(prayer.rakahs, color = TextMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(prayer.time, color = TextPureWhite, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)

@@ -11,3 +11,4 @@ staging/
 *.tmp.payload
 *.tmp.idx
 pak_compiler.lua
+.cxx/

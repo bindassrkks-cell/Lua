@@ -35,7 +35,7 @@ fun PakImage(path: String, contentDescription: String?, modifier: Modifier = Mod
         }
     }
     if (bitmap != null) {
-        Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = contentDescription, modifier = modifier, contentScale = ContentScale.Fit)
+        Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = contentDescription, modifier = modifier, contentScale = ContentScale.Crop)
     } else {
         Box(modifier = modifier.clip(RoundedCornerShape(16.dp)).background(DarkCardBorder), contentAlignment = Alignment.Center) {
             Icon(Icons.Default.Mosque, contentDescription = null, tint = MintSecondary)

@@ -20,14 +20,14 @@
         "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/check_circle/materialicons/48dp/1x/baseline_check_circle_black_48dp.png"
       },
       {
-        "name": "step2.webp",
-        "path": "images/wudhu/step2.webp",
-        "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/touch_app/materialicons/48dp/1x/baseline_touch_app_black_48dp.png"
+        "name": "post1.webp",
+        "path": "images/social/post1.webp",
+        "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/maps/place/materialicons/48dp/1x/baseline_place_black_48dp.png"
       },
       {
-        "name": "step3.webp",
-        "path": "images/wudhu/step3.webp",
-        "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/water_drop/materialicons/48dp/1x/baseline_water_drop_black_48dp.png"
+        "name": "post2.webp",
+        "path": "images/social/post2.webp",
+        "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/visibility/materialicons/48dp/1x/baseline_visibility_black_48dp.png"
       }
     ]
   }
