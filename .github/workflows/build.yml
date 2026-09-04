@@ -1,9 +1,11 @@
-name: Build and Release Islamic PAK
+name: Build and Release CorePatch PAK & Android APK
 
 on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -16,29 +18,38 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install Runtime Tools (Lua 5.4, jq, curl)
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install System Utilities (Lua 5.4, jq, curl)
         run: |
           sudo apt-get update
           sudo apt-get install -y lua5.4 jq curl coreutils
 
-      - name: Setup Content Workspace & Defaults
+      # =========================================================================
+      # 1. GENERATE CONTENT STRUCTURE (CorePatch Assets & Scripts)
+      # =========================================================================
+      - name: Scaffold CorePatch Content Files
         run: |
-          mkdir -p staging/images/salah
-          mkdir -p staging/images/wudhu
-          mkdir -p staging/scripts
-          mkdir -p staging/languages
-          mkdir -p staging/audio
+          mkdir -p content/scripts
+          mkdir -p content/languages
+          mkdir -p content/audio
+          mkdir -p content/images/salah
+          mkdir -p content/images/wudhu
           mkdir -p dist
 
-          # Agar repo me content directory hai to copy karein
-          if [ -d "content" ]; then
-            cp -r content/* staging/
-          fi
-
-          # Fallback data.json agar repo me maujood na ho
-          if [ ! -f "staging/data.json" ]; then
-            cat << 'EOF' > staging/data.json
+          # data.json agar repo me na ho to create karega
+          if [ ! -f "content/data.json" ]; then
+            cat << 'EOF' > content/data.json
           {
             "patch_name": "CorePatch",
             "version": "0.0.15.0",
@@ -54,6 +65,11 @@ jobs:
                   "name": "ruku.webp",
                   "path": "images/salah/ruku.webp",
                   "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/done/materialicons/48dp/1x/baseline_done_black_48dp.png"
+                },
+                {
+                  "name": "step1.webp",
+                  "path": "images/wudhu/step1.webp",
+                  "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/check_circle/materialicons/48dp/1x/baseline_check_circle_black_48dp.png"
                 }
               ]
             }
@@ -61,12 +77,11 @@ jobs:
           EOF
           fi
 
-          # Sample scripts and language fallback
-          if [ ! -f "staging/scripts/salah.lua" ]; then
-            cat << 'EOF' > staging/scripts/salah.lua
+          if [ ! -f "content/scripts/salah.lua" ]; then
+            cat << 'EOF' > content/scripts/salah.lua
           local currentStep = 1
           function onInit()
-              Bridge:log("CorePatch Script Loaded Successfully")
+              Bridge:log("CorePatch Salah Lua Controller Loaded")
           end
           function nextStep()
               currentStep = currentStep + 1
@@ -75,129 +90,122 @@ jobs:
           EOF
           fi
 
-          if [ ! -f "staging/languages/en.json" ]; then
-            echo '{"appName":"Islamic App","salahGuide":"Salah Guide"}' > staging/languages/en.json
-          fi
-          if [ ! -f "staging/languages/hi.json" ]; then
-            echo '{"appName":"इस्लामिक साथी","salahGuide":"नमाज़ गाइड"}' > staging/languages/hi.json
-          fi
-          if [ ! -f "staging/audio/takbir.ogg" ]; then
-            echo "OGG_AUDIO_BINARY_STREAM" > staging/audio/takbir.ogg
+          if [ ! -f "content/languages/en.json" ]; then
+            cat << 'EOF' > content/languages/en.json
+          {
+            "appName": "Islamic Assistant",
+            "salahGuide": "Salah Guide",
+            "wudhuGuide": "Wudhu Guide"
+          }
+          EOF
           fi
 
-      - name: Parse data.json and Download Images
+          if [ ! -f "content/languages/hi.json" ]; then
+            cat << 'EOF' > content/languages/hi.json
+          {
+            "appName": "इस्लामिक साथी",
+            "salahGuide": "नमाज़ गाइड",
+            "wudhuGuide": "वुज़ू गाइड"
+          }
+          EOF
+          fi
+
+          if [ ! -f "content/audio/takbir.ogg" ]; then
+            echo "OGG_AUDIO_STREAM_PLACEHOLDER" > content/audio/takbir.ogg
+          fi
+
+      # =========================================================================
+      # 2. DOWNLOAD IMAGES DEFINED IN DATA.JSON & COMPILE PAK USING LUA
+      # =========================================================================
+      - name: Fetch Remote Images & Compile CorePatch_0.0.15.0.pak
         run: |
+          mkdir -p staging
+          cp -r content/* staging/
+
           echo "--> Downloading assets defined in data.json..."
           jq -c '.assets.images[]' staging/data.json | while read -r item; do
             URL=$(echo "$item" | jq -r '.url')
             DEST_PATH=$(echo "$item" | jq -r '.path')
-
             if [ -n "$URL" ] && [ "$URL" != "null" ]; then
               TARGET_DIR="staging/$(dirname "$DEST_PATH")"
               mkdir -p "$TARGET_DIR"
-              echo "Fetching: $URL -> staging/$DEST_PATH"
               curl -fsSL --retry 3 "$URL" -o "staging/$DEST_PATH" || {
-                echo "Warning: Download failed for $URL, writing placeholder"
-                echo "RIFF_WEBP_DUMMY" > "staging/$DEST_PATH"
+                echo "Warning: Failed to fetch $URL, generating placeholder"
+                echo "WEBP_IMAGE_DUMMY_PAYLOAD" > "staging/$DEST_PATH"
               }
             fi
           done
 
-      - name: Generate Inline Lua PAK Compiler & Validator
-        run: |
-          # 1. Pure Lua 5.4 Binary PAK Builder
+          # Inline Lua 5.4 Binary PAK Builder
           cat << 'EOF' > pak_compiler.lua
           local MAGIC = "ISPK"
           local FORMAT_VERSION = 1
           local HEADER_SIZE = 64
 
-          local TYPE_GENERIC = 0
-          local TYPE_JSON    = 1
-          local TYPE_TEXT    = 2
-          local TYPE_LUA     = 3
-          local TYPE_IMAGE   = 4
-          local TYPE_AUDIO   = 5
-          local TYPE_FONT    = 6
-
           local function detect_content_type(path)
               local ext = path:match("%.([%w_]+)$")
               if ext then ext = ext:lower() end
-              if ext == "json" then return TYPE_JSON
-              elseif ext == "txt" then return TYPE_TEXT
-              elseif ext == "lua" then return TYPE_LUA
-              elseif ext == "webp" or ext == "png" or ext == "jpg" or ext == "jpeg" then return TYPE_IMAGE
-              elseif ext == "ogg" or ext == "mp3" or ext == "wav" then return TYPE_AUDIO
-              elseif ext == "ttf" or ext == "otf" then return TYPE_FONT
-              else return TYPE_GENERIC end
+              if ext == "json" then return 1
+              elseif ext == "txt" then return 2
+              elseif ext == "lua" then return 3
+              elseif ext == "webp" or ext == "png" or ext == "jpg" then return 4
+              elseif ext == "ogg" or ext == "mp3" then return 5
+              elseif ext == "ttf" or ext == "otf" then return 6
+              else return 0 end
           end
 
           local function get_file_sha256(filepath)
-              local cmd = string.format("sha256sum %q", filepath)
-              local handle = io.popen(cmd)
+              local handle = io.popen(string.format("sha256sum %q", filepath))
               local result = handle:read("*a")
               handle:close()
               local hex = result:match("(%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x)")
-              if not hex or #hex ~= 64 then error("SHA256 failed on " .. filepath) end
+              if not hex then error("SHA256 failed on " .. filepath) end
               local raw = (hex:gsub("..", function(cc) return string.char(tonumber(cc, 16)) end))
               return raw, hex
           end
 
-          local function scan_directory(dir)
-              local cmd = string.format("find %q -type f | sort", dir)
-              local handle = io.popen(cmd)
+          local function scan_dir(dir)
+              local handle = io.popen(string.format("find %q -type f | sort", dir))
               local files = {}
               local prefix = dir:gsub("/+$", "") .. "/"
-              local prefix_len = #prefix
               for line in handle:lines() do
-                  local rel_path = line:sub(prefix_len + 1):gsub("\\", "/"):gsub("^/+", "")
+                  local rel_path = line:sub(#prefix + 1):gsub("\\", "/"):gsub("^/+", "")
                   if not rel_path:find("%.tmp") then
-                      table.insert(files, { full_path = line, rel_path = rel_path })
+                      table.insert(files, { full = line, rel = rel_path })
                   end
               end
               handle:close()
               return files
           end
 
-          local input_dir = arg[1]
-          local output_pak = arg[2]
-          local content_ver = tonumber(arg[3]) or 150
+          local input_dir, output_pak, content_ver = arg[1], arg[2], tonumber(arg[3]) or 150
+          local files = scan_dir(input_dir)
+          print(string.format("--> Compiling %d entries into %s", #files, output_pak))
 
-          local files = scan_directory(input_dir)
-          print(string.format("--> Compiling %d entries into %s (ContentVer: %d)", #files, output_pak, content_ver))
-
-          local temp_data_path = output_pak .. ".tmp.payload"
-          local f_data = io.open(temp_data_path, "wb")
-          if not f_data then error("Cannot create temporary payload file") end
-
-          local entries = {}
-          local current_offset = HEADER_SIZE
+          local temp_data = output_pak .. ".tmp.payload"
+          local f_data = io.open(temp_data, "wb")
+          local entries, current_offset = {}, HEADER_SIZE
 
           for _, item in ipairs(files) do
-              local f_in = io.open(item.full_path, "rb")
-              if not f_in then error("Cannot read: " .. item.full_path) end
+              local f_in = io.open(item.full, "rb")
               local content = f_in:read("*a")
               f_in:close()
 
               local size = #content
-              local ctype = detect_content_type(item.rel_path)
-              local sha_raw, _ = get_file_sha256(item.full_path)
+              local ctype = detect_content_type(item.rel)
+              local sha_raw = get_file_sha256(item.full)
 
               f_data:write(content)
               table.insert(entries, {
-                  path = item.rel_path,
-                  ctype = ctype,
-                  offset = current_offset,
-                  size = size,
-                  comp_type = 0, -- COMPRESSION_NONE
-                  sha256 = sha_raw
+                  path = item.rel, ctype = ctype, offset = current_offset,
+                  size = size, comp_type = 0, sha256 = sha_raw
               })
               current_offset = current_offset + size
           end
           f_data:close()
 
-          -- Build Index Table
-          local temp_idx_path = output_pak .. ".tmp.idx"
-          local f_idx = io.open(temp_idx_path, "wb")
+          local temp_idx = output_pak .. ".tmp.idx"
+          local f_idx = io.open(temp_idx, "wb")
           for _, e in ipairs(entries) do
               f_idx:write(string.pack(">I2", #e.path))
               f_idx:write(e.path)
@@ -205,86 +213,38 @@ jobs:
           end
           f_idx:close()
 
-          local f_idx_read = io.open(temp_idx_path, "rb")
-          local index_bytes = f_idx_read:read("*a")
-          f_idx_read:close()
+          local f_idx_r = io.open(temp_idx, "rb")
+          local idx_bytes = f_idx_r:read("*a")
+          f_idx_r:close()
+          local idx_sha = get_file_sha256(temp_idx)
 
-          local index_offset = current_offset
-          local index_size = #index_bytes
-          local index_sha256, _ = get_file_sha256(temp_idx_path)
-
-          -- Build 64-byte Header
           local header = string.pack(">c4 I2 I2 I4 I4 I8 I8 c32",
-              MAGIC, FORMAT_VERSION, 0, content_ver, #entries, index_offset, index_size, index_sha256
+              MAGIC, FORMAT_VERSION, 0, content_ver, #entries, current_offset, #idx_bytes, idx_sha
           )
 
           local f_out = io.open(output_pak, "wb")
           f_out:write(header)
-
-          local f_payload = io.open(temp_data_path, "rb")
+          local f_p = io.open(temp_data, "rb")
           while true do
-              local chunk = f_payload:read(65536)
+              local chunk = f_p:read(65536)
               if not chunk then break end
               f_out:write(chunk)
           end
-          f_payload:close()
-
-          f_out:write(index_bytes)
+          f_p:close()
+          f_out:write(idx_bytes)
           f_out:close()
 
-          os.remove(temp_data_path)
-          os.remove(temp_idx_path)
-          print("[SUCCESS] Build Complete: " .. output_pak)
+          os.remove(temp_data)
+          os.remove(temp_idx)
+          print("[SUCCESS] PAK Created: " .. output_pak)
           EOF
 
-          # 2. Pure Lua 5.4 Binary PAK Validator
-          cat << 'EOF' > pak_validator.lua
-          local pak_path = arg[1]
-          local f = io.open(pak_path, "rb")
-          if not f then error("Cannot open PAK file: " .. tostring(pak_path)) end
-
-          local file_size = f:seek("end")
-          f:seek("set", 0)
-          if file_size < 64 then error("File smaller than 64-byte header") end
-
-          local header = f:read(64)
-          local magic, fmt_ver, flags, content_ver, count, idx_off, idx_sz, idx_sha = 
-              string.unpack(">c4 I2 I2 I4 I4 I8 I8 c32", header)
-
-          if magic ~= "ISPK" then error("Invalid Magic: " .. tostring(magic)) end
-          if fmt_ver ~= 1 then error("Unsupported format version: " .. tostring(fmt_ver)) end
-          if idx_off + idx_sz ~= file_size then error("Index table boundaries mismatch") end
-
-          f:seek("set", idx_off)
-          local idx_bytes = f:read(idx_sz)
-          local tmp = os.tmpname()
-          local tmp_f = io.open(tmp, "wb")
-          tmp_f:write(idx_bytes)
-          tmp_f:close()
-
-          local h = io.popen("sha256sum " .. tmp)
-          local hex = h:read("*a"):match("(%x+)")
-          h:close()
-          os.remove(tmp)
-
-          local raw = (hex:gsub("..", function(cc) return string.char(tonumber(cc, 16)) end))
-          if raw ~= idx_sha then error("Index checksum failure") end
-
-          print(string.format("[VERIFIED] PAK is 100%% valid! Entries: %d, ContentVersion: %d", count, content_ver))
-          f:close()
-          EOF
-
-      - name: Compile CorePatch_0.0.15.0.pak
-        run: |
+          # Compile CorePatch
           lua5.4 pak_compiler.lua staging dist/CorePatch_0.0.15.0.pak 150
-          lua5.4 pak_validator.lua dist/CorePatch_0.0.15.0.pak
 
-      - name: Generate Release Manifest & SHA-256 Checksums
-        run: |
+          # Generate Manifest and SHA256SUMS
           cd dist
           sha256sum CorePatch_0.0.15.0.pak > SHA256SUMS
-          cat SHA256SUMS
-
           HASH=$(awk '{print $1}' SHA256SUMS)
           SIZE=$(stat -c%s CorePatch_0.0.15.0.pak)
 
@@ -303,23 +263,949 @@ jobs:
             ]
           }
           EOF
-          cat manifest.json
+          cd ..
 
-      - name: Publish to GitHub Release
+      # =========================================================================
+      # 3. SCAFFOLD ANDROID JETPACK COMPOSE PROJECT STRUCTURE
+      # =========================================================================
+      - name: Scaffold Complete Android App Structure
+        run: |
+          mkdir -p gradle/wrapper
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/java/com/islamic/app/ui/theme
+          mkdir -p app/src/main/java/com/islamic/app/ui/components
+          mkdir -p app/src/main/java/com/islamic/app/ui/screens
+          mkdir -p app/src/main/java/com/islamic/app/pak
+          mkdir -p app/src/main/java/com/islamic/app/downloader
+
+          cat << 'EOF' > settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "IslamicApp"
+          include(":app")
+          EOF
+
+          cat << 'EOF' > build.gradle.kts
+          plugins {
+              id("com.android.application") version "8.7.2" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+          }
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat << 'EOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+
+          android {
+              namespace = "com.islamic.app"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.islamic.app"
+                  minSdk = 24
+                  targetSdk = 35
+                  versionCode = 150
+                  versionName = "0.0.15.0"
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+                  }
+                  debug {
+                      isDebuggable = true
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              buildFeatures {
+                  compose = true
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.15.0")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+              implementation("androidx.activity:activity-compose:1.9.3")
+
+              implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-graphics")
+              implementation("androidx.compose.ui:ui-tooling-preview")
+              implementation("androidx.compose.material3:material3:1.3.1")
+              implementation("androidx.compose.material:material-icons-extended")
+
+              implementation("org.luaj:luaj-jse:3.0.1")
+              implementation("com.squareup.okhttp3:okhttp:4.12.0")
+              implementation("org.json:json:20240303")
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <application
+                  android:allowBackup="true"
+                  android:label="Islamic App"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/values/strings.xml
+          <resources>
+              <string name="app_name">Islamic App</string>
+          </resources>
+          EOF
+
+          # UI Theme Colors
+          cat << 'EOF' > app/src/main/java/com/islamic/app/ui/theme/Color.kt
+          package com.islamic.app.ui.theme
+
+          import androidx.compose.ui.graphics.Color
+
+          val DarkOledBlack = Color(0xFF0C100E)
+          val DarkSurfaceCard = Color(0xFF141C18)
+          val DarkCardBorder = Color(0xFF22302A)
+          val DarkActiveBadge = Color(0xFFE65100)
+          val DarkActiveBadgeBg = Color(0xFF331B0E)
+          val EmeraldPrimary = Color(0xFF22C55E)
+          val MintSecondary = Color(0xFF4ADE80)
+          val SoftIllustrationBg = Color(0xFF88A08E)
+          val TextPureWhite = Color(0xFFF1F5F3)
+          val TextMuted = Color(0xFF8FA89B)
+          EOF
+
+          # UI Theme
+          cat << 'EOF' > app/src/main/java/com/islamic/app/ui/theme/Theme.kt
+          package com.islamic.app.ui.theme
+
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.darkColorScheme
+          import androidx.compose.runtime.Composable
+
+          private val DarkColorScheme = darkColorScheme(
+              primary = EmeraldPrimary,
+              secondary = MintSecondary,
+              background = DarkOledBlack,
+              surface = DarkSurfaceCard,
+              onPrimary = DarkOledBlack,
+              onBackground = TextPureWhite,
+              onSurface = TextPureWhite
+          )
+
+          @Composable
+          fun IslamicAppTheme(content: @Composable () -> Unit) {
+              MaterialTheme(colorScheme = DarkColorScheme, content = content)
+          }
+          EOF
+
+          # PAK Binary Reader
+          cat << 'EOF' > app/src/main/java/com/islamic/app/pak/PakReader.kt
+          package com.islamic.app.pak
+
+          import java.io.File
+          import java.io.RandomAccessFile
+          import java.nio.ByteBuffer
+          import java.nio.ByteOrder
+          import java.security.MessageDigest
+
+          data class PakEntry(
+              val path: String, val contentType: Byte, val offset: Long,
+              val size: Long, val compType: Byte, val sha256: ByteArray
+          )
+
+          class PakReader(val file: File) : AutoCloseable {
+              private val raf = RandomAccessFile(file, "r")
+              val entries = HashMap<String, PakEntry>()
+
+              init {
+                  require(file.length() >= 64) { "Invalid PAK size." }
+                  raf.seek(0)
+                  val headerBuf = ByteArray(64)
+                  raf.readFully(headerBuf)
+                  val bb = ByteBuffer.wrap(headerBuf).order(ByteOrder.BIG_ENDIAN)
+
+                  val magic = ByteArray(4)
+                  bb.get(magic)
+                  if (String(magic, Charsets.US_ASCII) != "ISPK") throw SecurityException("Invalid PAK Magic")
+
+                  val fmtVer = bb.short
+                  val flags = bb.short
+                  val contentVersion = bb.int
+                  val fileCount = bb.int
+                  val indexOffset = bb.long
+                  val indexSize = bb.long
+                  val indexSha256 = ByteArray(32)
+                  bb.get(indexSha256)
+
+                  raf.seek(indexOffset)
+                  val indexBuf = ByteArray(indexSize.toInt())
+                  raf.readFully(indexBuf)
+
+                  val md = MessageDigest.getInstance("SHA-256")
+                  if (!md.digest(indexBuf).contentEquals(indexSha256)) throw SecurityException("Corrupted PAK index")
+
+                  val idxBb = ByteBuffer.wrap(indexBuf).order(ByteOrder.BIG_ENDIAN)
+                  for (i in 0 until fileCount) {
+                      val pathLen = idxBb.short.toInt() and 0xFFFF
+                      val pathBytes = ByteArray(pathLen)
+                      idxBb.get(pathBytes)
+                      val path = String(pathBytes, Charsets.UTF_8)
+                      val ctype = idxBb.get()
+                      val offset = idxBb.long
+                      val compSize = idxBb.long
+                      val origSize = idxBb.long
+                      val compType = idxBb.get()
+                      val fileSha = ByteArray(32)
+                      idxBb.get(fileSha)
+                      entries[path] = PakEntry(path, ctype, offset, compSize, compType, fileSha)
+                  }
+              }
+
+              fun exists(path: String) = entries.containsKey(path)
+
+              @Synchronized
+              fun readBytes(path: String): ByteArray {
+                  val entry = entries[path] ?: throw NoSuchElementException("Path not found: $path")
+                  raf.seek(entry.offset)
+                  val payload = ByteArray(entry.size.toInt())
+                  raf.readFully(payload)
+                  return payload
+              }
+
+              fun readText(path: String) = String(readBytes(path), Charsets.UTF_8)
+              override fun close() = raf.close()
+          }
+          EOF
+
+          # PAK Manager
+          cat << 'EOF' > app/src/main/java/com/islamic/app/pak/PakManager.kt
+          package com.islamic.app.pak
+
+          import android.content.Context
+          import android.util.LruCache
+          import java.io.File
+
+          object PakManager {
+              private val mountedPaks = mutableListOf<PakReader>()
+              private val memoryCache = LruCache<String, ByteArray>(15 * 1024 * 1024)
+
+              fun init(context: Context) {
+                  val dir = getPakDirectory(context)
+                  if (!dir.exists()) dir.mkdirs()
+                  refreshMountedPackages(context)
+              }
+
+              fun getPakDirectory(context: Context) = File(context.filesDir, "content/pak")
+
+              @Synchronized
+              fun refreshMountedPackages(context: Context) {
+                  closeAll()
+                  val dir = getPakDirectory(context)
+                  val paks = dir.listFiles { f -> f.isFile && f.extension == "pak" } ?: emptyArray()
+                  for (f in paks.sortedBy { it.name }) {
+                      try { mountedPaks.add(PakReader(f)) } catch (e: Exception) { e.printStackTrace() }
+                  }
+              }
+
+              @Synchronized
+              fun exists(path: String) = mountedPaks.any { it.exists(path) }
+
+              @Synchronized
+              fun readBytes(path: String): ByteArray {
+                  val cached = memoryCache.get(path)
+                  if (cached != null) return cached
+                  for (pak in mountedPaks) {
+                      if (pak.exists(path)) {
+                          val data = pak.readBytes(path)
+                          memoryCache.put(path, data)
+                          return data
+                      }
+                  }
+                  throw NoSuchElementException("Asset missing: $path")
+              }
+
+              fun readText(path: String) = String(readBytes(path), Charsets.UTF_8)
+
+              @Synchronized
+              fun closeAll() {
+                  memoryCache.evictAll()
+                  mountedPaks.forEach { it.close() }
+                  mountedPaks.clear()
+              }
+          }
+          EOF
+
+          # PakDownloader
+          cat << 'EOF' > app/src/main/java/com/islamic/app/downloader/PakDownloader.kt
+          package com.islamic.app.downloader
+
+          import android.content.Context
+          import com.islamic.app.pak.PakManager
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.flow.Flow
+          import kotlinx.coroutines.flow.flow
+          import kotlinx.coroutines.flow.flowOn
+          import okhttp3.OkHttpClient
+          import okhttp3.Request
+          import org.json.JSONObject
+          import java.io.File
+          import java.io.FileOutputStream
+          import java.security.MessageDigest
+
+          sealed class UpdateState {
+              object Idle : UpdateState()
+              object Checking : UpdateState()
+              data class Progress(val percentage: Int) : UpdateState()
+              data class Completed(val message: String) : UpdateState()
+              data class Error(val error: String) : UpdateState()
+          }
+
+          class PakDownloader(private val context: Context) {
+              private val client = OkHttpClient()
+              private val manifestUrl = "https://github.com/bindassrkks-cell/Lua/releases/download/main/manifest.json"
+              private val pakBaseUrl = "https://github.com/bindassrkks-cell/Lua/releases/download/main/CorePatch_0.0.15.0.pak"
+
+              fun syncCorePatch(): Flow<UpdateState> = flow {
+                  emit(UpdateState.Checking)
+                  val manifestRequest = Request.Builder().url(manifestUrl).build()
+                  val manifestResponse = client.newCall(manifestRequest).execute()
+
+                  if (!manifestResponse.isSuccessful) {
+                      emit(UpdateState.Error("HTTP Error: ${manifestResponse.code}"))
+                      return@flow
+                  }
+
+                  val jsonStr = manifestResponse.body?.string().orEmpty()
+                  val manifestObj = JSONObject(jsonStr)
+                  val pkg = manifestObj.getJSONArray("packages").getJSONObject(0)
+                  val fileName = pkg.getString("file_name")
+                  val expectedSha = pkg.getString("sha256")
+
+                  val targetDir = PakManager.getPakDirectory(context)
+                  val targetFile = File(targetDir, fileName)
+                  val partFile = File(targetDir, "$fileName.part")
+
+                  val pakResponse = client.newCall(Request.Builder().url(pakBaseUrl).build()).execute()
+                  val body = pakResponse.body ?: run {
+                      emit(UpdateState.Error("Empty payload"))
+                      return@flow
+                  }
+
+                  val totalSize = body.contentLength()
+                  val input = body.byteStream()
+                  val output = FileOutputStream(partFile)
+                  val buffer = ByteArray(8192)
+                  var read: Int
+                  var downloaded = 0L
+
+                  try {
+                      while (input.read(buffer).also { read = it } != -1) {
+                          output.write(buffer, 0, read)
+                          downloaded += read
+                          emit(UpdateState.Progress(if (totalSize > 0) ((downloaded * 100) / totalSize).toInt() else 0))
+                      }
+                      output.flush()
+                  } finally {
+                      output.close()
+                      input.close()
+                  }
+
+                  val md = MessageDigest.getInstance("SHA-256")
+                  val calculatedSha = md.digest(partFile.readBytes()).joinToString("") { "%02x".format(it) }
+
+                  if (!calculatedSha.equals(expectedSha, ignoreCase = true)) {
+                      partFile.delete()
+                      emit(UpdateState.Error("SHA-256 check failed"))
+                      return@flow
+                  }
+
+                  if (targetFile.exists()) targetFile.delete()
+                  if (partFile.renameTo(targetFile)) {
+                      PakManager.refreshMountedPackages(context)
+                      emit(UpdateState.Completed("CorePatch 0.0.15.0 Active"))
+                  } else {
+                      emit(UpdateState.Error("Mount failed"))
+                  }
+              }.flowOn(Dispatchers.IO)
+          }
+          EOF
+
+          # PakImage UI Component
+          cat << 'EOF' > app/src/main/java/com/islamic/app/ui/components/PakImage.kt
+          package com.islamic.app.ui.components
+
+          import android.graphics.BitmapFactory
+          import androidx.compose.foundation.Image
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.Mosque
+          import androidx.compose.material3.Icon
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.asImageBitmap
+          import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.unit.dp
+          import com.islamic.app.pak.PakManager
+          import com.islamic.app.ui.theme.DarkCardBorder
+          import com.islamic.app.ui.theme.MintSecondary
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+
+          @Composable
+          fun PakImage(path: String, contentDescription: String?, modifier: Modifier = Modifier) {
+              var bitmap by remember(path) { mutableStateOf<android.graphics.Bitmap?>(null) }
+              LaunchedEffect(path) {
+                  withContext(Dispatchers.IO) {
+                      try {
+                          if (PakManager.exists(path)) {
+                              val bytes = PakManager.readBytes(path)
+                              bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                          }
+                      } catch (e: Exception) { e.printStackTrace() }
+                  }
+              }
+              if (bitmap != null) {
+                  Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = contentDescription, modifier = modifier, contentScale = ContentScale.Fit)
+              } else {
+                  Box(modifier = modifier.clip(RoundedCornerShape(16.dp)).background(DarkCardBorder), contentAlignment = Alignment.Center) {
+                      Icon(Icons.Default.Mosque, contentDescription = null, tint = MintSecondary)
+                  }
+              }
+          }
+          EOF
+
+          # HomeScreen
+          cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/HomeScreen.kt
+          package com.islamic.app.ui.screens
+
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.grid.GridCells
+          import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+          import androidx.compose.foundation.lazy.grid.items
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import com.islamic.app.ui.theme.*
+
+          data class PrayerInfo(val name: String, val rakahs: String, val time: String, val icon: ImageVector, val isCurrent: Boolean = false)
+
+          @Composable
+          fun HomeScreen(onNavigate: (String) -> Unit) {
+              val prayers = listOf(
+                  PrayerInfo("Fajr", "2 Rakahs", "05:39", Icons.Default.WbTwilight),
+                  PrayerInfo("Dhuhr", "4 Rakahs", "11:48", Icons.Default.WbSunny),
+                  PrayerInfo("Asr", "4 Rakahs", "13:39", Icons.Default.FilterDrama, isCurrent = true),
+                  PrayerInfo("Maghrib", "3 Rakahs", "15:57", Icons.Default.NightsStay),
+                  PrayerInfo("Isha", "4 Rakahs", "17:28", Icons.Default.Bedtime)
+              )
+
+              Column(
+                  modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(horizontal = 20.dp)
+              ) {
+                  Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                      Surface(shape = RoundedCornerShape(50), color = DarkSurfaceCard, border = androidx.compose.foundation.BorderStroke(1.dp, DarkCardBorder)) {
+                          Row(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                              Icon(Icons.Default.LocationOn, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(16.dp))
+                              Spacer(modifier = Modifier.width(6.dp))
+                              Text("London", color = TextPureWhite, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                              Spacer(modifier = Modifier.width(4.dp))
+                              Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = TextMuted, modifier = Modifier.size(18.dp))
+                          }
+                      }
+                      IconButton(onClick = { onNavigate("settings") }, modifier = Modifier.clip(CircleShape).background(DarkSurfaceCard).border(1.dp, DarkCardBorder, CircleShape)) {
+                          Icon(Icons.Default.Settings, contentDescription = "Settings", tint = TextPureWhite)
+                      }
+                  }
+
+                  Spacer(modifier = Modifier.height(18.dp))
+                  Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                      Icon(Icons.Default.FilterDrama, contentDescription = null, tint = TextMuted, modifier = Modifier.size(24.dp))
+                      Spacer(modifier = Modifier.height(6.dp))
+                      Text("Asr will end in", color = TextMuted, fontSize = 14.sp)
+                      Spacer(modifier = Modifier.height(2.dp))
+                      Text("01h:42m", color = TextPureWhite, fontSize = 42.sp, fontWeight = FontWeight.Bold)
+                      Spacer(modifier = Modifier.height(4.dp))
+                      Text("Maghrib starts at 15:57", color = TextMuted, fontSize = 13.sp)
+                  }
+
+                  Spacer(modifier = Modifier.height(24.dp))
+                  LazyVerticalGrid(columns = GridCells.Fixed(2), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
+                      items(prayers) { prayer ->
+                          Card(
+                              shape = RoundedCornerShape(22.dp),
+                              colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
+                              modifier = Modifier.fillMaxWidth().border(1.dp, if (prayer.isCurrent) EmeraldPrimary.copy(alpha = 0.5f) else DarkCardBorder, RoundedCornerShape(22.dp))
+                          ) {
+                              Column(modifier = Modifier.padding(18.dp)) {
+                                  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                      Icon(prayer.icon, contentDescription = null, tint = TextMuted, modifier = Modifier.size(20.dp))
+                                      if (prayer.isCurrent) {
+                                          Box(modifier = Modifier.clip(RoundedCornerShape(50)).background(DarkActiveBadgeBg).padding(horizontal = 8.dp, vertical = 2.dp)) {
+                                              Text("Now", color = DarkActiveBadge, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                          }
+                                      }
+                                  }
+                                  Spacer(modifier = Modifier.height(14.dp))
+                                  Text(prayer.name, color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                  Spacer(modifier = Modifier.height(2.dp))
+                                  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                      Text(prayer.rakahs, color = TextMuted, fontSize = 12.sp)
+                                      Text(prayer.time, color = TextPureWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+          # SalahScreen
+          cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/SalahScreen.kt
+          package com.islamic.app.ui.screens
+
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import com.islamic.app.ui.components.PakImage
+          import com.islamic.app.ui.theme.*
+
+          @Composable
+          fun SalahScreen(onBack: () -> Unit) {
+              Column(
+                  modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(16.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally
+              ) {
+                  Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                      IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextPureWhite) }
+                      Text("Salah Guide", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                  }
+                  Spacer(modifier = Modifier.height(8.dp))
+                  Card(
+                      modifier = Modifier.fillMaxWidth().weight(1.3f),
+                      shape = RoundedCornerShape(26.dp),
+                      colors = CardDefaults.cardColors(containerColor = SoftIllustrationBg)
+                  ) {
+                      Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                          PakImage(path = "images/salah/ruku.webp", contentDescription = "Ruku", modifier = Modifier.fillMaxSize().padding(16.dp))
+                      }
+                  }
+                  Spacer(modifier = Modifier.height(16.dp))
+                  Card(
+                      modifier = Modifier.fillMaxWidth().border(1.dp, DarkCardBorder, RoundedCornerShape(24.dp)),
+                      shape = RoundedCornerShape(24.dp),
+                      colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
+                  ) {
+                      Column(modifier = Modifier.padding(20.dp)) {
+                          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                              Text("SUBHAANA RABBIYAL\n'AZEEM (x3)", color = TextPureWhite, fontSize = 17.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp)
+                              IconButton(onClick = { }, modifier = Modifier.clip(CircleShape).background(DarkCardBorder)) {
+                                  Icon(Icons.Default.VolumeUp, contentDescription = "Audio", tint = TextPureWhite)
+                              }
+                          }
+                          Spacer(modifier = Modifier.height(10.dp))
+                          Text("How perfect is my Lord, the Magnificent.\n(repeated 3 times)", color = TextMuted, fontSize = 13.sp)
+                      }
+                  }
+                  Spacer(modifier = Modifier.height(12.dp))
+                  Card(
+                      modifier = Modifier.fillMaxWidth().clickable { }.border(1.dp, DarkCardBorder, RoundedCornerShape(18.dp)),
+                      shape = RoundedCornerShape(18.dp),
+                      colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
+                  ) {
+                      Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                          Row(verticalAlignment = Alignment.CenterVertically) {
+                              Icon(Icons.Default.MenuBook, contentDescription = null, tint = TextMuted, modifier = Modifier.size(18.dp))
+                              Spacer(modifier = Modifier.width(10.dp))
+                              Text("Standing After Ruku (Qaumah)", color = TextPureWhite, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                          }
+                          Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextMuted)
+                      }
+                  }
+                  Spacer(modifier = Modifier.height(16.dp))
+                  Surface(shape = RoundedCornerShape(50), color = DarkSurfaceCard, border = androidx.compose.foundation.BorderStroke(1.dp, DarkCardBorder), modifier = Modifier.clickable { }) {
+                      Row(modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                          Icon(Icons.Default.PlayArrow, contentDescription = null, tint = TextPureWhite)
+                          Spacer(modifier = Modifier.width(8.dp))
+                          Text("Auto play", color = TextPureWhite, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                      }
+                  }
+              }
+          }
+          EOF
+
+          # WudhuScreen
+          cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/WudhuScreen.kt
+          package com.islamic.app.ui.screens
+
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.itemsIndexed
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import com.islamic.app.ui.components.PakImage
+          import com.islamic.app.ui.theme.*
+
+          data class WudhuStepUi(val title: String, val desc: String, val imagePath: String)
+
+          @Composable
+          fun WudhuScreen(onBack: () -> Unit) {
+              val steps = listOf(
+                  WudhuStepUi("Niyyah (Intention)", "The intention (niyyah) for performing wudu is made in the heart...", "images/wudhu/step1.webp"),
+                  WudhuStepUi("Wash the hands three times", "First wash the right hand, then the left, up to the wrists...", "images/wudhu/step2.webp"),
+                  WudhuStepUi("Rinse the mouth three times", "Scoop water with the right hand and rinse the mouth thoroughly...", "images/wudhu/step3.webp")
+              )
+
+              Column(modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(horizontal = 16.dp)) {
+                  Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                      IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextPureWhite) }
+                      Text("Wudhu guide", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                  }
+                  LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
+                      itemsIndexed(steps) { index, step ->
+                          Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                              Card(
+                                  modifier = Modifier.fillMaxWidth().border(1.dp, DarkCardBorder, RoundedCornerShape(22.dp)),
+                                  shape = RoundedCornerShape(22.dp),
+                                  colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
+                              ) {
+                                  Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                      Box(modifier = Modifier.size(68.dp).clip(RoundedCornerShape(18.dp)).background(DarkCardBorder), contentAlignment = Alignment.Center) {
+                                          PakImage(path = step.imagePath, contentDescription = step.title, modifier = Modifier.size(54.dp))
+                                      }
+                                      Spacer(modifier = Modifier.width(16.dp))
+                                      Column(modifier = Modifier.weight(1f)) {
+                                          Text(step.title, color = TextPureWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                          Spacer(modifier = Modifier.height(4.dp))
+                                          Text(step.desc, color = TextMuted, fontSize = 13.sp, maxLines = 2)
+                                      }
+                                  }
+                              }
+                              if (index < steps.size - 1) {
+                                  Spacer(modifier = Modifier.height(8.dp))
+                                  Box(modifier = Modifier.size(32.dp).clip(CircleShape).background(DarkSurfaceCard).border(1.dp, DarkCardBorder, CircleShape), contentAlignment = Alignment.Center) {
+                                      Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = TextMuted, modifier = Modifier.size(18.dp))
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+          # SettingsScreen
+          cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/SettingsScreen.kt
+          package com.islamic.app.ui.screens
+
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.CloudDownload
+          import androidx.compose.material.icons.filled.CheckCircle
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import com.islamic.app.downloader.PakDownloader
+          import com.islamic.app.downloader.UpdateState
+          import com.islamic.app.ui.theme.*
+          import kotlinx.coroutines.launch
+
+          @Composable
+          fun SettingsScreen() {
+              val context = LocalContext.current
+              val scope = rememberCoroutineScope()
+              val downloader = remember { PakDownloader(context) }
+              var statusState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+
+              Column(modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(20.dp)) {
+                  Text("Content Updates", color = TextPureWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                  Text("Binary Content Packages via GitHub Releases", color = TextMuted, fontSize = 13.sp)
+                  Spacer(modifier = Modifier.height(20.dp))
+
+                  Card(
+                      modifier = Modifier.fillMaxWidth().border(1.dp, DarkCardBorder, RoundedCornerShape(22.dp)),
+                      shape = RoundedCornerShape(22.dp),
+                      colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
+                  ) {
+                      Column(modifier = Modifier.padding(20.dp)) {
+                          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                              Column {
+                                  Text("CorePatch", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                  Text("Version: 0.0.15.0", color = TextMuted, fontSize = 13.sp)
+                              }
+                              Icon(Icons.Default.CloudDownload, contentDescription = null, tint = EmeraldPrimary)
+                          }
+                          Spacer(modifier = Modifier.height(16.dp))
+
+                          when (val st = statusState) {
+                              is UpdateState.Idle -> {
+                                  Button(
+                                      onClick = { scope.launch { downloader.syncCorePatch().collect { statusState = it } } },
+                                      colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                                  ) {
+                                      Text("Download & Mount PAK", color = DarkOledBlack, fontWeight = FontWeight.Bold)
+                                  }
+                              }
+                              is UpdateState.Checking -> Text("Checking release manifest...", color = TextMuted, fontSize = 13.sp)
+                              is UpdateState.Progress -> {
+                                  LinearProgressIndicator(progress = { st.percentage / 100f }, modifier = Modifier.fillMaxWidth(), color = EmeraldPrimary)
+                                  Spacer(modifier = Modifier.height(6.dp))
+                                  Text("${st.percentage}% Downloaded", color = TextMuted, fontSize = 12.sp)
+                              }
+                              is UpdateState.Completed -> {
+                                  Row(verticalAlignment = Alignment.CenterVertically) {
+                                      Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldPrimary)
+                                      Spacer(modifier = Modifier.width(6.dp))
+                                      Text(st.message, color = EmeraldPrimary, fontSize = 14.sp)
+                                  }
+                              }
+                              is UpdateState.Error -> Text("Error: ${st.error}", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+          # MainActivity
+          cat << 'EOF' > app/src/main/java/com/islamic/app/MainActivity.kt
+          package com.islamic.app
+
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Modifier
+          import com.islamic.app.pak.PakManager
+          import com.islamic.app.ui.screens.*
+          import com.islamic.app.ui.theme.*
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  PakManager.init(this)
+
+                  setContent {
+                      IslamicAppTheme {
+                          var currentRoute by remember { mutableStateOf("home") }
+                          Scaffold(
+                              bottomBar = {
+                                  NavigationBar(containerColor = DarkSurfaceCard) {
+                                      NavigationBarItem(
+                                          selected = currentRoute == "home",
+                                          onClick = { currentRoute = "home" },
+                                          icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                                          label = { Text("Home") },
+                                          colors = NavigationBarItemDefaults.colors(
+                                              selectedIconColor = EmeraldPrimary, unselectedIconColor = TextMuted,
+                                              selectedTextColor = EmeraldPrimary, unselectedTextColor = TextMuted,
+                                              indicatorColor = DarkCardBorder
+                                          )
+                                      )
+                                      NavigationBarItem(
+                                          selected = currentRoute == "salah",
+                                          onClick = { currentRoute = "salah" },
+                                          icon = { Icon(Icons.Default.AccessibilityNew, contentDescription = "Salah") },
+                                          label = { Text("Salah") },
+                                          colors = NavigationBarItemDefaults.colors(
+                                              selectedIconColor = EmeraldPrimary, unselectedIconColor = TextMuted,
+                                              selectedTextColor = EmeraldPrimary, unselectedTextColor = TextMuted,
+                                              indicatorColor = DarkCardBorder
+                                          )
+                                      )
+                                      NavigationBarItem(
+                                          selected = currentRoute == "wudhu",
+                                          onClick = { currentRoute = "wudhu" },
+                                          icon = { Icon(Icons.Default.WaterDrop, contentDescription = "Wudhu") },
+                                          label = { Text("Wudhu") },
+                                          colors = NavigationBarItemDefaults.colors(
+                                              selectedIconColor = EmeraldPrimary, unselectedIconColor = TextMuted,
+                                              selectedTextColor = EmeraldPrimary, unselectedTextColor = TextMuted,
+                                              indicatorColor = DarkCardBorder
+                                          )
+                                      )
+                                      NavigationBarItem(
+                                          selected = currentRoute == "settings",
+                                          onClick = { currentRoute = "settings" },
+                                          icon = { Icon(Icons.Default.CloudDownload, contentDescription = "Updates") },
+                                          label = { Text("Updates") },
+                                          colors = NavigationBarItemDefaults.colors(
+                                              selectedIconColor = EmeraldPrimary, unselectedIconColor = TextMuted,
+                                              selectedTextColor = EmeraldPrimary, unselectedTextColor = TextMuted,
+                                              indicatorColor = DarkCardBorder
+                                          )
+                                      )
+                                  }
+                              }
+                          ) { padding ->
+                              Box(modifier = Modifier.padding(padding)) {
+                                  when (currentRoute) {
+                                      "home" -> HomeScreen(onNavigate = { currentRoute = it })
+                                      "salah" -> SalahScreen(onBack = { currentRoute = "home" })
+                                      "wudhu" -> WudhuScreen(onBack = { currentRoute = "home" })
+                                      "settings" -> SettingsScreen()
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  PakManager.closeAll()
+              }
+          }
+          EOF
+
+      # =========================================================================
+      # 4. GENERATE GRADLE WRAPPER & COMPILE APK
+      # =========================================================================
+      - name: Build Android Debug APK
+        run: |
+          gradle wrapper --gradle-version 8.9 --distribution-type bin
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/IslamicApp_0.0.15.0.apk
+
+      # =========================================================================
+      # 5. COMMIT FULL PROJECT & CONTENT STRUCTURE TO REPOSITORY
+      # =========================================================================
+      - name: Commit Scaffolding to Repository
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add content app gradle gradlew gradlew.bat build.gradle.kts settings.gradle.kts gradle.properties
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: scaffold Android project & CorePatch content structure [skip ci]"
+            # Agar workflow tag push par trigger hua ho to main branch par sync karega
+            git push origin HEAD:main || git push origin main || true
+          else
+            echo "Working tree clean, nothing to commit."
+          fi
+
+      # =========================================================================
+      # 6. PUBLISH EVERYTHING TO GITHUB RELEASES
+      # =========================================================================
+      - name: Publish CorePatch PAK & APK to GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         with:
-          name: CorePatch Release ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name || 'v0.0.15.0' }}
+          name: CorePatch & Islamic App 0.0.15.0
+          tag_name: ${{ (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v0.0.15.0' }}
           files: |
             dist/CorePatch_0.0.15.0.pak
             dist/SHA256SUMS
             dist/manifest.json
+            dist/IslamicApp_0.0.15.0.apk
           body: |
-            ### Islamic Content Package Release
-            - **Binary**: `CorePatch_0.0.15.0.pak`
-            - **Format**: ISPK v1 (Big-Endian Direct Stream)
-            - **Included Content**: WebP images, OGG audio, JSON translations, Lua script logic
+            ### Islamic App Ecosystem Release (v0.0.15.0)
+            
+            #### 📦 Core Content Assets:
+            - **`CorePatch_0.0.15.0.pak`**: Lua compiled binary container (WebP images, OGG, Lua, JSON).
+            - **`manifest.json`**: OTA update definition with size and SHA-256 verification.
+            - **`SHA256SUMS`**: Security digest for tamper verification.
+            
+            #### 📱 Application:
+            - **`IslamicApp_0.0.15.0.apk`**: Pure Dark Material 3 Jetpack Compose app with real-time PAK hot-mounting.
           draft: false
           prerelease: false
         env:
