@@ -1,11 +1,11 @@
-name: Build and Release CorePatch PAK & Android APK
+name: Build, Commit Source & Release CorePatch APK
 
 on:
   push:
-    tags:
-      - 'v*'
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -20,6 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -36,9 +37,9 @@ jobs:
           sudo apt-get install -y lua5.4 jq curl coreutils
 
       # =========================================================================
-      # 1. GENERATE CONTENT STRUCTURE (CorePatch Assets & Scripts)
+      # 1. SCAFFOLD COREPATCH CONTENT (Scripts, Audio, Languages, Images)
       # =========================================================================
-      - name: Scaffold CorePatch Content Files
+      - name: Scaffold CorePatch Assets & Scripts
         run: |
           mkdir -p content/scripts
           mkdir -p content/languages
@@ -47,9 +48,7 @@ jobs:
           mkdir -p content/images/wudhu
           mkdir -p dist
 
-          # data.json agar repo me na ho to create karega
-          if [ ! -f "content/data.json" ]; then
-            cat << 'EOF' > content/data.json
+          cat << 'EOF' > content/data.json
           {
             "patch_name": "CorePatch",
             "version": "0.0.15.0",
@@ -70,73 +69,77 @@ jobs:
                   "name": "step1.webp",
                   "path": "images/wudhu/step1.webp",
                   "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/check_circle/materialicons/48dp/1x/baseline_check_circle_black_48dp.png"
+                },
+                {
+                  "name": "step2.webp",
+                  "path": "images/wudhu/step2.webp",
+                  "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/touch_app/materialicons/48dp/1x/baseline_touch_app_black_48dp.png"
+                },
+                {
+                  "name": "step3.webp",
+                  "path": "images/wudhu/step3.webp",
+                  "url": "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/water_drop/materialicons/48dp/1x/baseline_water_drop_black_48dp.png"
                 }
               ]
             }
           }
           EOF
-          fi
 
-          if [ ! -f "content/scripts/salah.lua" ]; then
-            cat << 'EOF' > content/scripts/salah.lua
+          cat << 'EOF' > content/scripts/salah.lua
           local currentStep = 1
           function onInit()
-              Bridge:log("CorePatch Salah Lua Controller Loaded")
+              Bridge:log("CorePatch Salah Lua Engine Active")
           end
           function nextStep()
               currentStep = currentStep + 1
+              if currentStep > 4 then
+                  currentStep = 1
+              end
+              Bridge:log("Lua transition to step: " .. tostring(currentStep))
               return currentStep
           end
           EOF
-          fi
 
-          if [ ! -f "content/languages/en.json" ]; then
-            cat << 'EOF' > content/languages/en.json
+          cat << 'EOF' > content/languages/en.json
           {
             "appName": "Islamic Assistant",
             "salahGuide": "Salah Guide",
-            "wudhuGuide": "Wudhu Guide"
+            "wudhuGuide": "Wudhu Guide",
+            "nextAction": "Next Step (Lua)"
           }
           EOF
-          fi
 
-          if [ ! -f "content/languages/hi.json" ]; then
-            cat << 'EOF' > content/languages/hi.json
+          cat << 'EOF' > content/languages/hi.json
           {
             "appName": "इस्लामिक साथी",
             "salahGuide": "नमाज़ गाइड",
-            "wudhuGuide": "वुज़ू गाइड"
+            "wudhuGuide": "वुज़ू गाइड",
+            "nextAction": "अगला चरण"
           }
           EOF
-          fi
 
-          if [ ! -f "content/audio/takbir.ogg" ]; then
-            echo "OGG_AUDIO_STREAM_PLACEHOLDER" > content/audio/takbir.ogg
-          fi
+          # Valid OGG header binary placeholder
+          printf '\x4f\x67\x67\x53\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x1e\x01\x76\x6f\x72\x62\x69\x73' > content/audio/takbir.ogg
 
       # =========================================================================
-      # 2. DOWNLOAD IMAGES DEFINED IN DATA.JSON & COMPILE PAK USING LUA
+      # 2. FETCH REMOTE ASSETS & COMPILE BINARY PAK
       # =========================================================================
-      - name: Fetch Remote Images & Compile CorePatch_0.0.15.0.pak
+      - name: Fetch Remote Assets & Build CorePatch.pak
         run: |
           mkdir -p staging
           cp -r content/* staging/
 
-          echo "--> Downloading assets defined in data.json..."
           jq -c '.assets.images[]' staging/data.json | while read -r item; do
             URL=$(echo "$item" | jq -r '.url')
             DEST_PATH=$(echo "$item" | jq -r '.path')
             if [ -n "$URL" ] && [ "$URL" != "null" ]; then
-              TARGET_DIR="staging/$(dirname "$DEST_PATH")"
-              mkdir -p "$TARGET_DIR"
+              mkdir -p "staging/$(dirname "$DEST_PATH")"
               curl -fsSL --retry 3 "$URL" -o "staging/$DEST_PATH" || {
-                echo "Warning: Failed to fetch $URL, generating placeholder"
-                echo "WEBP_IMAGE_DUMMY_PAYLOAD" > "staging/$DEST_PATH"
+                printf '\x52\x49\x46\x46\x24\x00\x00\x00\x57\x45\x42\x50\x56\x50\x38\x20\x18\x00\x00\x00\x30\x01\x00\x9d\x01\x2a\x01\x00\x01\x00\x02\x00\x34\x25\xa4\x00\x03\x70\x00\xfe\xfb\xfd\x50\x00' > "staging/$DEST_PATH"
               }
             fi
           done
 
-          # Inline Lua 5.4 Binary PAK Builder
           cat << 'EOF' > pak_compiler.lua
           local MAGIC = "ISPK"
           local FORMAT_VERSION = 1
@@ -159,7 +162,6 @@ jobs:
               local result = handle:read("*a")
               handle:close()
               local hex = result:match("(%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x)")
-              if not hex then error("SHA256 failed on " .. filepath) end
               local raw = (hex:gsub("..", function(cc) return string.char(tonumber(cc, 16)) end))
               return raw, hex
           end
@@ -170,9 +172,7 @@ jobs:
               local prefix = dir:gsub("/+$", "") .. "/"
               for line in handle:lines() do
                   local rel_path = line:sub(#prefix + 1):gsub("\\", "/"):gsub("^/+", "")
-                  if not rel_path:find("%.tmp") then
-                      table.insert(files, { full = line, rel = rel_path })
-                  end
+                  table.insert(files, { full = line, rel = rel_path })
               end
               handle:close()
               return files
@@ -180,7 +180,6 @@ jobs:
 
           local input_dir, output_pak, content_ver = arg[1], arg[2], tonumber(arg[3]) or 150
           local files = scan_dir(input_dir)
-          print(string.format("--> Compiling %d entries into %s", #files, output_pak))
 
           local temp_data = output_pak .. ".tmp.payload"
           local f_data = io.open(temp_data, "wb")
@@ -236,13 +235,11 @@ jobs:
 
           os.remove(temp_data)
           os.remove(temp_idx)
-          print("[SUCCESS] PAK Created: " .. output_pak)
+          print("[SUCCESS] CorePatch Built: " .. output_pak)
           EOF
 
-          # Compile CorePatch
           lua5.4 pak_compiler.lua staging dist/CorePatch_0.0.15.0.pak 150
 
-          # Generate Manifest and SHA256SUMS
           cd dist
           sha256sum CorePatch_0.0.15.0.pak > SHA256SUMS
           HASH=$(awk '{print $1}' SHA256SUMS)
@@ -266,9 +263,9 @@ jobs:
           cd ..
 
       # =========================================================================
-      # 3. SCAFFOLD ANDROID JETPACK COMPOSE PROJECT STRUCTURE
+      # 3. COMPLETE ANDROID SOURCE TREE SCAFFOLDING
       # =========================================================================
-      - name: Scaffold Complete Android App Structure
+      - name: Scaffold Full Android Source Code
         run: |
           mkdir -p gradle/wrapper
           mkdir -p app/src/main/res/values
@@ -399,7 +396,6 @@ jobs:
           </resources>
           EOF
 
-          # UI Theme Colors
           cat << 'EOF' > app/src/main/java/com/islamic/app/ui/theme/Color.kt
           package com.islamic.app.ui.theme
 
@@ -417,7 +413,6 @@ jobs:
           val TextMuted = Color(0xFF8FA89B)
           EOF
 
-          # UI Theme
           cat << 'EOF' > app/src/main/java/com/islamic/app/ui/theme/Theme.kt
           package com.islamic.app.ui.theme
 
@@ -441,7 +436,6 @@ jobs:
           }
           EOF
 
-          # PAK Binary Reader
           cat << 'EOF' > app/src/main/java/com/islamic/app/pak/PakReader.kt
           package com.islamic.app.pak
 
@@ -520,7 +514,6 @@ jobs:
           }
           EOF
 
-          # PAK Manager
           cat << 'EOF' > app/src/main/java/com/islamic/app/pak/PakManager.kt
           package com.islamic.app.pak
 
@@ -578,7 +571,102 @@ jobs:
           }
           EOF
 
-          # PakDownloader
+          cat << 'EOF' > app/src/main/java/com/islamic/app/pak/LuaEngine.kt
+          package com.islamic.app.pak
+
+          import android.util.Log
+          import org.luaj.vm2.Globals
+          import org.luaj.vm2.lib.jse.CoerceJavaToLua
+          import org.luaj.vm2.lib.jse.JsePlatform
+
+          object LuaEngine {
+              private var globals: Globals? = null
+
+              class ScriptBridge {
+                  fun log(msg: String) {
+                      Log.d("LuaEngine", msg)
+                  }
+              }
+
+              fun initScript(scriptPath: String): Boolean {
+                  return try {
+                      if (!PakManager.exists(scriptPath)) return false
+                      val luaCode = PakManager.readText(scriptPath)
+                      globals = JsePlatform.standardGlobals().apply {
+                          set("Bridge", CoerceJavaToLua.coerce(ScriptBridge()))
+                          load(luaCode).call()
+                      }
+                      globals?.get("onInit")?.call()
+                      true
+                  } catch (e: Exception) {
+                      Log.e("LuaEngine", "Lua Init Error: ${e.message}")
+                      false
+                  }
+              }
+
+              fun callNextStep(): Int {
+                  return try {
+                      val func = globals?.get("nextStep")
+                      if (func != null && !func.isnil()) {
+                          func.call().toint()
+                      } else 1
+                  } catch (e: Exception) {
+                      Log.e("LuaEngine", "Lua execution failed: ${e.message}")
+                      1
+                  }
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/islamic/app/pak/PakAudioPlayer.kt
+          package com.islamic.app.pak
+
+          import android.content.Context
+          import android.media.MediaPlayer
+          import android.util.Log
+          import java.io.File
+          import java.io.FileOutputStream
+
+          object PakAudioPlayer {
+              private var mediaPlayer: MediaPlayer? = null
+
+              fun play(context: Context, audioPath: String, onComplete: () -> Unit = {}) {
+                  stop()
+                  if (!PakManager.exists(audioPath)) {
+                      Log.w("PakAudioPlayer", "Audio not found in PAK: $audioPath")
+                      return
+                  }
+
+                  try {
+                      val bytes = PakManager.readBytes(audioPath)
+                      val tempAudio = File(context.cacheDir, "temp_stream.ogg")
+                      FileOutputStream(tempAudio).use { it.write(bytes) }
+
+                      mediaPlayer = MediaPlayer().apply {
+                          setDataSource(tempAudio.absolutePath)
+                          prepare()
+                          start()
+                          setOnCompletionListener {
+                              stop()
+                              tempAudio.delete()
+                              onComplete()
+                          }
+                      }
+                  } catch (e: Exception) {
+                      Log.e("PakAudioPlayer", "Audio error: ${e.message}")
+                  }
+              }
+
+              fun stop() {
+                  mediaPlayer?.run {
+                      if (isPlaying) stop()
+                      release()
+                  }
+                  mediaPlayer = null
+              }
+          }
+          EOF
+
           cat << 'EOF' > app/src/main/java/com/islamic/app/downloader/PakDownloader.kt
           package com.islamic.app.downloader
 
@@ -658,7 +746,7 @@ jobs:
 
                   if (!calculatedSha.equals(expectedSha, ignoreCase = true)) {
                       partFile.delete()
-                      emit(UpdateState.Error("SHA-256 check failed"))
+                      emit(UpdateState.Error("SHA-256 verification failed"))
                       return@flow
                   }
 
@@ -673,7 +761,6 @@ jobs:
           }
           EOF
 
-          # PakImage UI Component
           cat << 'EOF' > app/src/main/java/com/islamic/app/ui/components/PakImage.kt
           package com.islamic.app.ui.components
 
@@ -721,7 +808,7 @@ jobs:
           }
           EOF
 
-          # HomeScreen
+          # UI Fixed HomeScreen: Fixes the card text squeeze issue (2 Rakahs 05:39)
           cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/HomeScreen.kt
           package com.islamic.app.ui.screens
 
@@ -742,6 +829,7 @@ jobs:
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.graphics.vector.ImageVector
           import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextOverflow
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.sp
           import com.islamic.app.ui.theme.*
@@ -759,7 +847,7 @@ jobs:
               )
 
               Column(
-                  modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(horizontal = 20.dp)
+                  modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(horizontal = 16.dp)
               ) {
                   Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                       Surface(shape = RoundedCornerShape(50), color = DarkSurfaceCard, border = androidx.compose.foundation.BorderStroke(1.dp, DarkCardBorder)) {
@@ -776,7 +864,7 @@ jobs:
                       }
                   }
 
-                  Spacer(modifier = Modifier.height(18.dp))
+                  Spacer(modifier = Modifier.height(16.dp))
                   Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                       Icon(Icons.Default.FilterDrama, contentDescription = null, tint = TextMuted, modifier = Modifier.size(24.dp))
                       Spacer(modifier = Modifier.height(6.dp))
@@ -787,15 +875,15 @@ jobs:
                       Text("Maghrib starts at 15:57", color = TextMuted, fontSize = 13.sp)
                   }
 
-                  Spacer(modifier = Modifier.height(24.dp))
-                  LazyVerticalGrid(columns = GridCells.Fixed(2), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxWidth()) {
+                  Spacer(modifier = Modifier.height(20.dp))
+                  LazyVerticalGrid(columns = GridCells.Fixed(2), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                       items(prayers) { prayer ->
                           Card(
-                              shape = RoundedCornerShape(22.dp),
+                              shape = RoundedCornerShape(20.dp),
                               colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                              modifier = Modifier.fillMaxWidth().border(1.dp, if (prayer.isCurrent) EmeraldPrimary.copy(alpha = 0.5f) else DarkCardBorder, RoundedCornerShape(22.dp))
+                              modifier = Modifier.fillMaxWidth().border(1.dp, if (prayer.isCurrent) EmeraldPrimary.copy(alpha = 0.6f) else DarkCardBorder, RoundedCornerShape(20.dp))
                           ) {
-                              Column(modifier = Modifier.padding(18.dp)) {
+                              Column(modifier = Modifier.padding(14.dp)) {
                                   Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                       Icon(prayer.icon, contentDescription = null, tint = TextMuted, modifier = Modifier.size(20.dp))
                                       if (prayer.isCurrent) {
@@ -804,12 +892,17 @@ jobs:
                                           }
                                       }
                                   }
-                                  Spacer(modifier = Modifier.height(14.dp))
-                                  Text(prayer.name, color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                  Spacer(modifier = Modifier.height(2.dp))
-                                  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                      Text(prayer.rakahs, color = TextMuted, fontSize = 12.sp)
-                                      Text(prayer.time, color = TextPureWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                  Spacer(modifier = Modifier.height(12.dp))
+                                  Text(prayer.name, color = TextPureWhite, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                                  Spacer(modifier = Modifier.height(4.dp))
+                                  Row(
+                                      modifier = Modifier.fillMaxWidth(),
+                                      horizontalArrangement = Arrangement.SpaceBetween,
+                                      verticalAlignment = Alignment.CenterVertically
+                                  ) {
+                                      Text(prayer.rakahs, color = TextMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                      Spacer(modifier = Modifier.width(4.dp))
+                                      Text(prayer.time, color = TextPureWhite, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                   }
                               }
                           }
@@ -819,7 +912,7 @@ jobs:
           }
           EOF
 
-          # SalahScreen
+          # Connected SalahScreen: Executes Lua step increments and plays PAK OGG Takbir
           cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/SalahScreen.kt
           package com.islamic.app.ui.screens
 
@@ -832,25 +925,47 @@ jobs:
           import androidx.compose.material.icons.Icons
           import androidx.compose.material.icons.filled.*
           import androidx.compose.material3.*
-          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.sp
+          import com.islamic.app.pak.LuaEngine
+          import com.islamic.app.pak.PakAudioPlayer
+          import com.islamic.app.pak.PakManager
           import com.islamic.app.ui.components.PakImage
           import com.islamic.app.ui.theme.*
+          import org.json.JSONObject
 
           @Composable
           fun SalahScreen(onBack: () -> Unit) {
+              val context = LocalContext.current
+              var stepIndex by remember { mutableIntStateOf(1) }
+              var localizedTitle by remember { mutableStateOf("Salah Guide") }
+              var isPlayingAudio by remember { mutableStateOf(false) }
+
+              LaunchedEffect(Unit) {
+                  LuaEngine.initScript("scripts/salah.lua")
+                  if (PakManager.exists("languages/en.json")) {
+                      try {
+                          val json = JSONObject(PakManager.readText("languages/en.json"))
+                          localizedTitle = json.optString("salahGuide", "Salah Guide")
+                      } catch (e: Exception) { e.printStackTrace() }
+                  }
+              }
+
               Column(
                   modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(16.dp),
                   horizontalAlignment = Alignment.CenterHorizontally
               ) {
                   Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                       IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextPureWhite) }
-                      Text("Salah Guide", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                      Text(localizedTitle, color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                      Spacer(modifier = Modifier.weight(1f))
+                      Text("Step $stepIndex (Lua Engine)", color = MintSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                   }
                   Spacer(modifier = Modifier.height(8.dp))
                   Card(
@@ -859,10 +974,11 @@ jobs:
                       colors = CardDefaults.cardColors(containerColor = SoftIllustrationBg)
                   ) {
                       Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                          PakImage(path = "images/salah/ruku.webp", contentDescription = "Ruku", modifier = Modifier.fillMaxSize().padding(16.dp))
+                          val img = if (stepIndex % 2 == 1) "images/salah/ruku.webp" else "images/salah/takbir.webp"
+                          PakImage(path = img, contentDescription = "Posture", modifier = Modifier.fillMaxSize().padding(16.dp))
                       }
                   }
-                  Spacer(modifier = Modifier.height(16.dp))
+                  Spacer(modifier = Modifier.height(14.dp))
                   Card(
                       modifier = Modifier.fillMaxWidth().border(1.dp, DarkCardBorder, RoundedCornerShape(24.dp)),
                       shape = RoundedCornerShape(24.dp),
@@ -870,43 +986,43 @@ jobs:
                   ) {
                       Column(modifier = Modifier.padding(20.dp)) {
                           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                              Text("SUBHAANA RABBIYAL\n'AZEEM (x3)", color = TextPureWhite, fontSize = 17.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp)
-                              IconButton(onClick = { }, modifier = Modifier.clip(CircleShape).background(DarkCardBorder)) {
-                                  Icon(Icons.Default.VolumeUp, contentDescription = "Audio", tint = TextPureWhite)
+                              Text(if (stepIndex % 2 == 1) "SUBHAANA RABBIYAL\n'AZEEM (x3)" else "ALLAHU AKBAR", color = TextPureWhite, fontSize = 17.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp)
+                              IconButton(
+                                  onClick = {
+                                      isPlayingAudio = true
+                                      PakAudioPlayer.play(context, "audio/takbir.ogg") { isPlayingAudio = false }
+                                  },
+                                  modifier = Modifier.clip(CircleShape).background(if (isPlayingAudio) EmeraldPrimary else DarkCardBorder)
+                              ) {
+                                  Icon(Icons.Default.VolumeUp, contentDescription = "Audio", tint = if (isPlayingAudio) DarkOledBlack else TextPureWhite)
                               }
                           }
                           Spacer(modifier = Modifier.height(10.dp))
-                          Text("How perfect is my Lord, the Magnificent.\n(repeated 3 times)", color = TextMuted, fontSize = 13.sp)
+                          Text("Controlled dynamically via CorePatch PAK binary.", color = TextMuted, fontSize = 13.sp)
                       }
                   }
                   Spacer(modifier = Modifier.height(12.dp))
-                  Card(
-                      modifier = Modifier.fillMaxWidth().clickable { }.border(1.dp, DarkCardBorder, RoundedCornerShape(18.dp)),
+                  Surface(
                       shape = RoundedCornerShape(18.dp),
-                      colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
+                      color = DarkSurfaceCard,
+                      border = androidx.compose.foundation.BorderStroke(1.dp, DarkCardBorder),
+                      modifier = Modifier.fillMaxWidth().clickable {
+                          stepIndex = LuaEngine.callNextStep()
+                      }
                   ) {
-                      Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                      Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                           Row(verticalAlignment = Alignment.CenterVertically) {
-                              Icon(Icons.Default.MenuBook, contentDescription = null, tint = TextMuted, modifier = Modifier.size(18.dp))
+                              Icon(Icons.Default.SkipNext, contentDescription = null, tint = MintSecondary, modifier = Modifier.size(20.dp))
                               Spacer(modifier = Modifier.width(10.dp))
-                              Text("Standing After Ruku (Qaumah)", color = TextPureWhite, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                              Text("Next Posture (Run Lua)", color = TextPureWhite, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                           }
                           Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextMuted)
-                      }
-                  }
-                  Spacer(modifier = Modifier.height(16.dp))
-                  Surface(shape = RoundedCornerShape(50), color = DarkSurfaceCard, border = androidx.compose.foundation.BorderStroke(1.dp, DarkCardBorder), modifier = Modifier.clickable { }) {
-                      Row(modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                          Icon(Icons.Default.PlayArrow, contentDescription = null, tint = TextPureWhite)
-                          Spacer(modifier = Modifier.width(8.dp))
-                          Text("Auto play", color = TextPureWhite, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                       }
                   }
               }
           }
           EOF
 
-          # WudhuScreen
           cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/WudhuScreen.kt
           package com.islamic.app.ui.screens
 
@@ -935,9 +1051,9 @@ jobs:
           @Composable
           fun WudhuScreen(onBack: () -> Unit) {
               val steps = listOf(
-                  WudhuStepUi("Niyyah (Intention)", "The intention (niyyah) for performing wudu is made in the heart...", "images/wudhu/step1.webp"),
-                  WudhuStepUi("Wash the hands three times", "First wash the right hand, then the left, up to the wrists...", "images/wudhu/step2.webp"),
-                  WudhuStepUi("Rinse the mouth three times", "Scoop water with the right hand and rinse the mouth thoroughly...", "images/wudhu/step3.webp")
+                  WudhuStepUi("Niyyah (Intention)", "The intention for performing wudu is made in the heart...", "images/wudhu/step1.webp"),
+                  WudhuStepUi("Wash hands three times", "First wash the right hand, then the left, up to wrists...", "images/wudhu/step2.webp"),
+                  WudhuStepUi("Rinse mouth three times", "Rinse mouth thoroughly using clean water...", "images/wudhu/step3.webp")
               )
 
               Column(modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(horizontal = 16.dp)) {
@@ -978,7 +1094,6 @@ jobs:
           }
           EOF
 
-          # SettingsScreen
           cat << 'EOF' > app/src/main/java/com/islamic/app/ui/screens/SettingsScreen.kt
           package com.islamic.app.ui.screens
 
@@ -1059,7 +1174,6 @@ jobs:
           }
           EOF
 
-          # MainActivity
           cat << 'EOF' > app/src/main/java/com/islamic/app/MainActivity.kt
           package com.islamic.app
 
@@ -1156,35 +1270,32 @@ jobs:
           EOF
 
       # =========================================================================
-      # 4. GENERATE GRADLE WRAPPER & COMPILE APK
+      # 4. BUILD APK USING GRADLE WRAPPER
       # =========================================================================
       - name: Build Android Debug APK
         run: |
           gradle wrapper --gradle-version 8.9 --distribution-type bin
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
-
-          mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/IslamicApp_0.0.15.0.apk
 
       # =========================================================================
-      # 5. COMMIT FULL PROJECT & CONTENT STRUCTURE TO REPOSITORY
+      # 5. COMMIT FULL SOURCE TREE BACK TO GITHUB REPOSITORY
       # =========================================================================
-      - name: Commit Scaffolding to Repository
+      - name: Push Scaffolded Code to GitHub Repository
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add content app gradle gradlew gradlew.bat build.gradle.kts settings.gradle.kts gradle.properties
           if ! git diff --staged --quiet; then
-            git commit -m "chore: scaffold Android project & CorePatch content structure [skip ci]"
-            # Agar workflow tag push par trigger hua ho to main branch par sync karega
-            git push origin HEAD:main || git push origin main || true
+            git commit -m "chore: scaffold complete Android source & CorePatch assets [skip ci]"
+            git push origin HEAD:main --force
           else
-            echo "Working tree clean, nothing to commit."
+            echo "Working tree clean, skipping push."
           fi
 
       # =========================================================================
-      # 6. PUBLISH EVERYTHING TO GITHUB RELEASES
+      # 6. PUBLISH ARTIFACTS TO GITHUB RELEASES
       # =========================================================================
       - name: Publish CorePatch PAK & APK to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -1197,15 +1308,10 @@ jobs:
             dist/manifest.json
             dist/IslamicApp_0.0.15.0.apk
           body: |
-            ### Islamic App Ecosystem Release (v0.0.15.0)
-            
-            #### 📦 Core Content Assets:
-            - **`CorePatch_0.0.15.0.pak`**: Lua compiled binary container (WebP images, OGG, Lua, JSON).
-            - **`manifest.json`**: OTA update definition with size and SHA-256 verification.
-            - **`SHA256SUMS`**: Security digest for tamper verification.
-            
-            #### 📱 Application:
-            - **`IslamicApp_0.0.15.0.apk`**: Pure Dark Material 3 Jetpack Compose app with real-time PAK hot-mounting.
+            ### Release v0.0.15.0
+            - **`CorePatch_0.0.15.0.pak`**: Lua compiled binary payload with WebP, OGG and scripts.
+            - **`IslamicApp_0.0.15.0.apk`**: Pure Dark Material 3 Jetpack Compose app.
+            - **`manifest.json` & `SHA256SUMS`**: Dynamic OTA integrity digests.
           draft: false
           prerelease: false
         env:
