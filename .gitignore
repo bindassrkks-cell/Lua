@@ -7,8 +7,5 @@ build/
 */build/
 dist/
 staging/
-*.tmp
-*.tmp.payload
-*.tmp.idx
-pak_compiler.lua
 .cxx/
+app/src/main/cpp/libsos_blob.c

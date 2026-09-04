@@ -17,8 +17,7 @@ object LocationHelper {
         var bestLoc: Location? = null
         try {
             val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val providers = lm.getProviders(true)
-            for (p in providers) {
+            for (p in lm.getProviders(true)) {
                 val l = lm.getLastKnownLocation(p) ?: continue
                 if (bestLoc == null || l.accuracy < bestLoc!!.accuracy) {
                     bestLoc = l
@@ -28,16 +27,16 @@ object LocationHelper {
             e.printStackTrace()
         }
 
-        val lat = bestLoc?.latitude ?: 51.5074
-        val lng = bestLoc?.longitude ?: -0.1278
-        var cityName = if (bestLoc != null) "Detected Location" else "London"
+        val lat = bestLoc?.latitude ?: 23.7957
+        val lng = bestLoc?.longitude ?: 86.4304
+        var cityName = "Dhanbad"
 
         try {
             val geocoder = Geocoder(context, Locale.getDefault())
             @Suppress("DEPRECATION")
             val list = geocoder.getFromLocation(lat, lng, 1)
             if (!list.isNullOrEmpty()) {
-                cityName = list[0].locality ?: list[0].subAdminArea ?: list[0].adminArea ?: "Local City"
+                cityName = list[0].locality ?: list[0].subAdminArea ?: list[0].adminArea ?: "My Location"
             }
         } catch (e: Exception) {
             e.printStackTrace()

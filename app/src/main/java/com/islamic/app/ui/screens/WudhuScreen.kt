@@ -17,17 +17,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.islamic.app.ui.components.PakImage
+import com.islamic.app.ui.components.UrlImage
 import com.islamic.app.ui.theme.*
 
-data class WudhuStepUi(val title: String, val desc: String, val imagePath: String)
+data class WudhuStep(val title: String, val desc: String, val url: String)
 
 @Composable
 fun WudhuScreen(onBack: () -> Unit) {
     val steps = listOf(
-        WudhuStepUi("Niyyah (Intention)", "The intention for performing wudu is made in the heart...", "images/wudhu/step1.webp"),
-        WudhuStepUi("Wash hands three times", "First wash the right hand, then the left, up to wrists...", "images/wudhu/step1.webp"),
-        WudhuStepUi("Rinse mouth three times", "Rinse mouth thoroughly using clean water...", "images/wudhu/step1.webp")
+        WudhuStep("Niyyah (Intention)", "Make the intention in your heart to perform wudhu for prayer.", "https://images.unsplash.com/photo-1542838132-92c53300491e?w=300"),
+        WudhuStep("Washing Hands", "Wash both hands up to the wrists thoroughly three times.", "https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=300"),
+        WudhuStep("Rinsing Mouth", "Rinse the mouth with water three times ensuring complete purity.", "https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=300")
     )
 
     Column(modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(horizontal = 16.dp)) {
@@ -37,28 +37,20 @@ fun WudhuScreen(onBack: () -> Unit) {
         }
         LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
             itemsIndexed(steps) { index, step ->
-                Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth().border(1.dp, DarkCardBorder, RoundedCornerShape(22.dp)),
-                        shape = RoundedCornerShape(22.dp),
-                        colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
-                    ) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(modifier = Modifier.size(68.dp).clip(RoundedCornerShape(18.dp)).background(DarkCardBorder), contentAlignment = Alignment.Center) {
-                                PakImage(path = step.imagePath, contentDescription = step.title, modifier = Modifier.size(54.dp))
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(step.title, color = TextPureWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(step.desc, color = TextMuted, fontSize = 13.sp, maxLines = 2)
-                            }
+                Card(
+                    modifier = Modifier.fillMaxWidth().border(1.dp, DarkCardBorder, RoundedCornerShape(22.dp)),
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
+                ) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.size(64.dp).clip(RoundedCornerShape(16.dp))) {
+                            UrlImage(url = step.url, contentDescription = step.title, modifier = Modifier.fillMaxSize())
                         }
-                    }
-                    if (index < steps.size - 1) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Box(modifier = Modifier.size(32.dp).clip(CircleShape).background(DarkSurfaceCard).border(1.dp, DarkCardBorder, CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = TextMuted, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(step.title, color = TextPureWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(step.desc, color = TextMuted, fontSize = 13.sp, maxLines = 2)
                         }
                     }
                 }

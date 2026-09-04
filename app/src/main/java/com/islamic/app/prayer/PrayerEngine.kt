@@ -33,10 +33,7 @@ object PrayerEngine {
 
         var y = year.toDouble()
         var m = month.toDouble()
-        if (m <= 2) {
-            y -= 1
-            m += 12
-        }
+        if (m <= 2) { y -= 1; m += 12 }
         val a = floor(y / 100)
         val b = 2 - a + floor(a / 4)
         val jd = floor(365.25 * (y + 4716)) + floor(30.6001 * (m + 1)) + day + b - 1524.5
@@ -49,7 +46,6 @@ object PrayerEngine {
         val ra = fixHour(dArcTan2(dCos(e) * dSin(l), dCos(l)) / 15.0)
         val decl = dArcSin(dSin(e) * dSin(l))
         val eqt = q / 15.0 - ra
-
         val noon = fixHour(12.0 + tz - lng / 15.0 - eqt)
 
         fun hourAngle(angle: Double): Double {
@@ -59,14 +55,14 @@ object PrayerEngine {
 
         val fajrHour = noon - hourAngle(18.0)
         val sunsetHour = noon + hourAngle(0.833)
-        val ishaHour = noon + hourAngle(17.0)
-
+        val ishaHour = noon + hourAngle(17.5)
         val asrAngle = -dArcTan2(1.0 + dTan(abs(lat - decl)), 1.0)
         val asrHour = noon + hourAngle(abs(asrAngle))
         val maghribHour = sunsetHour
 
-        fun toCalendar(h: Double): Calendar {
+        fun toCalendar(h: Double, dayOffset: Int = 0): Calendar {
             val c = cal.clone() as Calendar
+            c.add(Calendar.DATE, dayOffset)
             val hr = floor(h).toInt()
             val min = floor((h - hr) * 60.0).toInt()
             val sec = floor(((h - hr) * 60.0 - min) * 60.0).toInt()
@@ -83,11 +79,13 @@ object PrayerEngine {
         val maghribCal = toCalendar(maghribHour)
         val ishaCal = toCalendar(ishaHour)
 
-        val now = System.currentTimeMillis()
+        val now = cal.timeInMillis
 
-        var cur = "Isha"
-        var next = "Fajr"
-        var nextCal = fajrCal.clone() as Calendar
+        val cur: String
+        val next: String
+        val nextCal: Calendar
+
+        // Night logic: After Isha or before Fajr, the current prayer is Isha
         if (now < fajrCal.timeInMillis) {
             cur = "Isha"
             next = "Fajr"
@@ -111,7 +109,7 @@ object PrayerEngine {
         } else {
             cur = "Isha"
             next = "Fajr"
-            nextCal = (fajrCal.clone() as Calendar).apply { add(Calendar.DATE, 1) }
+            nextCal = toCalendar(fajrHour, dayOffset = 1)
         }
 
         val diffSec = max(0L, (nextCal.timeInMillis - now) / 1000L)

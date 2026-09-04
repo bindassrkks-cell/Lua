@@ -37,7 +37,7 @@ data class PrayerItemUi(val name: String, val rakahs: String, val time: String, 
 @Composable
 fun HomeScreen(onOpenSettings: () -> Unit) {
     val context = LocalContext.current
-    var userLocation by remember { mutableStateOf(UserLocation("London", 51.5074, -0.1278)) }
+    var userLocation by remember { mutableStateOf(UserLocation("Dhanbad", 23.7957, 86.4304)) }
     var times by remember { mutableStateOf<CalculatedTimes?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -51,12 +51,15 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
 
     LaunchedEffect(userLocation) {
         while (true) {
-            times = PrayerEngine.calculate(userLocation.latitude, userLocation.longitude)
+            times = PrayerEngine.calculate(userLocation.latitude, userLocation.longitude, Calendar.getInstance())
             delay(1000L)
         }
     }
 
-    val currentTimes = times ?: remember { PrayerEngine.calculate(userLocation.latitude, userLocation.longitude) }
+    val currentTimes = times ?: remember {
+        PrayerEngine.calculate(userLocation.latitude, userLocation.longitude, Calendar.getInstance())
+    }
+
     fun fmt(c: Calendar) = String.format("%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
 
     val prayerList = listOf(
@@ -85,7 +88,12 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
 
         Spacer(modifier = Modifier.height(14.dp))
         Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.FilterDrama, contentDescription = null, tint = TextMuted, modifier = Modifier.size(24.dp))
+            Icon(
+                if (currentTimes.currentPrayer == "Isha") Icons.Default.Bedtime else Icons.Default.FilterDrama,
+                contentDescription = null,
+                tint = EmeraldPrimary,
+                modifier = Modifier.size(26.dp)
+            )
             Spacer(modifier = Modifier.height(6.dp))
             Text("${currentTimes.currentPrayer} will end in", color = TextMuted, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(2.dp))
@@ -100,7 +108,7 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
                 Card(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard),
-                    modifier = Modifier.fillMaxWidth().border(1.dp, if (prayer.isCurrent) EmeraldPrimary.copy(alpha = 0.6f) else DarkCardBorder, RoundedCornerShape(20.dp))
+                    modifier = Modifier.fillMaxWidth().border(1.dp, if (prayer.isCurrent) EmeraldPrimary.copy(alpha = 0.7f) else DarkCardBorder, RoundedCornerShape(20.dp))
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

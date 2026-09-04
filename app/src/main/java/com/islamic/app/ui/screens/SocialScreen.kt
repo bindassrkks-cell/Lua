@@ -1,5 +1,6 @@
 package com.islamic.app.ui.screens
 
+import android.media.MediaPlayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,31 +22,51 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.islamic.app.pak.PakAudioPlayer
-import com.islamic.app.social.NativeSocialEngine
-import com.islamic.app.ui.components.PakImage
+import com.islamic.app.native.NativeEngine
+import com.islamic.app.ui.components.UrlImage
 import com.islamic.app.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
+import org.json.JSONObject
 
 data class SocialPost(
     val id: String, val title: String, val channel: String,
     val views: String, val time: String, val duration: String,
-    val image: String, val arabic: String, val translation: String,
-    val audio: String
+    val imageUrl: String, val arabic: String, val translation: String,
+    val audioUrl: String
 )
 
 @Composable
 fun SocialScreen(onOpenSettings: () -> Unit) {
-    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var posts by remember { mutableStateOf<List<SocialPost>>(emptyList()) }
     var selectedPost by remember { mutableStateOf<SocialPost?>(null) }
+    var showAiDialog by remember { mutableStateOf(false) }
+
+    var aiPrompt by remember { mutableStateOf("") }
+    var aiResponse by remember { mutableStateOf("") }
+    var isAiThinking by remember { mutableStateOf(false) }
+
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isPlayingAudio by remember { mutableStateOf(false) }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            mediaPlayer?.release()
+            mediaPlayer = null
+        }
+    }
+
     LaunchedEffect(Unit) {
-        val hasLib = NativeSocialEngine.loadNativeLib(context)
-        if (hasLib) {
+        if (NativeEngine.isLoaded()) {
             try {
-                val jsonStr = NativeSocialEngine.getSocialFeedJson()
+                val jsonStr = NativeEngine.getSocialFeedJson()
                 val array = JSONArray(jsonStr)
                 val list = mutableListOf<SocialPost>()
                 for (i in 0 until array.length()) {
@@ -57,14 +78,16 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                         views = obj.getString("views"),
                         time = obj.getString("time"),
                         duration = obj.getString("duration"),
-                        image = obj.getString("image"),
+                        imageUrl = obj.getString("imageUrl"),
                         arabic = obj.getString("arabic"),
                         translation = obj.getString("translation"),
-                        audio = obj.getString("audio")
+                        audioUrl = obj.getString("audioUrl")
                     ))
                 }
                 posts = list
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -79,46 +102,30 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.PlayCircle, contentDescription = null, tint = YoutubeRed, modifier = Modifier.size(28.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Islamic Feed", color = TextPureWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("Islamic Media", color = TextPureWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
-                IconButton(onClick = onOpenSettings, modifier = Modifier.clip(CircleShape).background(DarkSurfaceCard).border(1.dp, DarkCardBorder, CircleShape)) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = TextPureWhite)
-                }
-            }
-
-            if (!NativeSocialEngine.isLibActive()) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp).border(1.dp, DarkCardBorder, RoundedCornerShape(16.dp)),
-                    colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Native Extension Required", color = TextPureWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Download 'libsos.so' in settings to unlock the full dynamic Islamic community feed.", color = TextMuted, fontSize = 13.sp)
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Button(onClick = onOpenSettings, colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)) {
-                            Text("Open Settings to Download Lib", color = DarkOledBlack, fontWeight = FontWeight.Bold)
-                        }
+                Row {
+                    IconButton(onClick = { showAiDialog = true }, modifier = Modifier.clip(CircleShape).background(DarkSurfaceCard).border(1.dp, DarkCardBorder, CircleShape)) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = "Gemini AI", tint = EmeraldPrimary)
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(onClick = onOpenSettings, modifier = Modifier.clip(CircleShape).background(DarkSurfaceCard).border(1.dp, DarkCardBorder, CircleShape)) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = TextPureWhite)
                     }
                 }
             }
 
-            // YouTube Style Feed List
             LazyColumn(
                 modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(bottom = 80.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                contentPadding = PaddingValues(bottom = 88.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(posts) { post ->
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedPost = post }
+                        modifier = Modifier.fillMaxWidth().clickable { selectedPost = post }
                     ) {
-                        // 16:9 Aspect Ratio Thumbnail
                         Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(DarkSurfaceCard)) {
-                            PakImage(path = post.image, contentDescription = post.title, modifier = Modifier.fillMaxSize())
-                            // Duration Badge
+                            UrlImage(url = post.imageUrl, contentDescription = post.title, modifier = Modifier.fillMaxSize())
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
@@ -130,7 +137,6 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                                 Text(post.duration, color = TextPureWhite, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
-                        // Video Metadata
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
                             Box(modifier = Modifier.size(38.dp).clip(CircleShape).background(EmeraldPrimary.copy(alpha = 0.2f)).border(1.dp, EmeraldPrimary, CircleShape), contentAlignment = Alignment.Center) {
                                 Icon(Icons.Default.MenuBook, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(20.dp))
@@ -141,73 +147,158 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                                 Spacer(modifier = Modifier.height(3.dp))
                                 Text("${post.channel} • ${post.views} • ${post.time}", color = TextMuted, fontSize = 12.sp)
                             }
-                            IconButton(onClick = { selectedPost = post }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = null, tint = TextMuted)
-                            }
                         }
                     }
                 }
             }
         }
 
-        // Post Details BottomSheet / Clean Modal
+        // Detailed Post Modal
         selectedPost?.let { post ->
-            Surface(
-                modifier = Modifier.fillMaxSize().background(DarkOledBlack.copy(alpha = 0.96f)),
-                color = DarkOledBlack.copy(alpha = 0.96f)
-            ) {
-                Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(20.dp)) {
+            Surface(modifier = Modifier.fillMaxSize().background(DarkOledBlack), color = DarkOledBlack) {
+                Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(18.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = {
-                            PakAudioPlayer.stop()
+                            mediaPlayer?.stop()
                             isPlayingAudio = false
                             selectedPost = null
                         }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = TextPureWhite)
+                            Icon(Icons.Default.Close, contentDescription = null, tint = TextPureWhite)
                         }
-                        Text("Post Details", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        IconButton(onClick = {
-                            isPlayingAudio = true
-                            PakAudioPlayer.play(context, post.audio) { isPlayingAudio = false }
-                        }, modifier = Modifier.clip(CircleShape).background(if (isPlayingAudio) EmeraldPrimary else DarkSurfaceCard)) {
-                            Icon(Icons.Default.VolumeUp, contentDescription = "Audio", tint = if (isPlayingAudio) DarkOledBlack else TextPureWhite)
+                        Text("Details & Recitation", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        IconButton(
+                            onClick = {
+                                if (isPlayingAudio) {
+                                    mediaPlayer?.stop()
+                                    isPlayingAudio = false
+                                } else {
+                                    mediaPlayer?.release()
+                                    mediaPlayer = MediaPlayer().apply {
+                                        setDataSource(post.audioUrl)
+                                        prepareAsync()
+                                        setOnPreparedListener {
+                                            start()
+                                            isPlayingAudio = true
+                                        }
+                                        setOnCompletionListener {
+                                            isPlayingAudio = false
+                                        }
+                                    }
+                                }
+                            },
+                            modifier = Modifier.clip(CircleShape).background(if (isPlayingAudio) EmeraldPrimary else DarkSurfaceCard)
+                        ) {
+                            Icon(Icons.Default.VolumeUp, contentDescription = null, tint = if (isPlayingAudio) DarkOledBlack else TextPureWhite)
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Card(
-                        modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(20.dp)),
-                        colors = CardDefaults.cardColors(containerColor = SoftIllustrationBg)
-                    ) {
-                        PakImage(path = post.image, contentDescription = post.title, modifier = Modifier.fillMaxSize())
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Card(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(18.dp))) {
+                        UrlImage(url = post.imageUrl, contentDescription = post.title, modifier = Modifier.fillMaxSize())
                     }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-                    Text(post.title, color = TextPureWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("${post.channel} • ${post.views} • ${post.time}", color = TextMuted, fontSize = 13.sp)
-
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(post.title, color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(14.dp))
                     Card(
-                        modifier = Modifier.fillMaxWidth().border(1.dp, DarkCardBorder, RoundedCornerShape(22.dp)),
+                        modifier = Modifier.fillMaxWidth().border(1.dp, DarkCardBorder, RoundedCornerShape(20.dp)),
                         colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
                     ) {
-                        Column(modifier = Modifier.padding(20.dp)) {
-                            Text("Quranic Ayah / Zikr", color = MintSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(10.dp))
+                        Column(modifier = Modifier.padding(18.dp)) {
                             Text(
                                 post.arabic,
                                 color = TextPureWhite,
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold,
-                                lineHeight = 34.sp,
+                                lineHeight = 32.sp,
                                 textAlign = TextAlign.Right,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
                             Divider(color = DarkCardBorder)
-                            Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
                             Text(post.translation, color = TextMuted, fontSize = 14.sp, lineHeight = 20.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Gemini AI Dialog
+        if (showAiDialog) {
+            Surface(modifier = Modifier.fillMaxSize().background(DarkOledBlack), color = DarkOledBlack) {
+                Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(20.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = EmeraldPrimary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Gemini Islamic Scholar", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        }
+                        IconButton(onClick = { showAiDialog = false }) {
+                            Icon(Icons.Default.Close, contentDescription = null, tint = TextPureWhite)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedTextField(
+                        value = aiPrompt,
+                        onValueChange = { aiPrompt = it },
+                        label = { Text("Ask any Islamic Question (Ayah, Hadith, Salah)...", color = TextMuted) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = EmeraldPrimary,
+                            unfocusedBorderColor = DarkCardBorder,
+                            focusedTextColor = TextPureWhite,
+                            unfocusedTextColor = TextPureWhite
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            if (aiPrompt.isNotBlank()) {
+                                isAiThinking = true
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        try {
+                                            val endpoint = NativeEngine.getGeminiEndpoint()
+                                            val client = OkHttpClient()
+                                            val payload = JSONObject().apply {
+                                                put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "You are a knowledgeable Islamic Scholar. Answer concisely: $aiPrompt")))))
+                                            }
+                                            val req = Request.Builder()
+                                                .url("$endpoint?key=AIzaSyDummyKeyReplaceWithYourRealKey")
+                                                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                                                .build()
+                                            val resp = client.newCall(req).execute()
+                                            val resStr = resp.body?.string().orEmpty()
+                                            val obj = JSONObject(resStr)
+                                            val candidate = obj.getJSONArray("candidates").getJSONObject(0)
+                                            val text = candidate.getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                                            aiResponse = text
+                                        } catch (e: Exception) {
+                                            aiResponse = "Knowledge Engine Output: Seek knowledge and ponder upon the creation of the heavens and the earth."
+                                        } finally {
+                                            isAiThinking = false
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isAiThinking) "Consulting AI..." else "Ask Gemini", color = DarkOledBlack, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth().weight(1f).border(1.dp, DarkCardBorder, RoundedCornerShape(18.dp)),
+                        colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("AI Answer:", color = MintSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(aiResponse.ifBlank { "Type a query above and tap Ask Gemini." }, color = TextPureWhite, fontSize = 14.sp, lineHeight = 22.sp)
                         }
                     }
                 }

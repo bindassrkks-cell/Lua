@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
 project("sos")
-add_library(sos SHARED libsos.c)
+add_library(sos SHARED libsos.c libsos_blob.c)
 find_library(log-lib log)
 target_link_libraries(sos ${log-lib})
