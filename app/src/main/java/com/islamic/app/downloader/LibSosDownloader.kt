@@ -48,15 +48,16 @@ class LibSosDownloader(private val context: Context) {
         val input = body.byteStream()
         val output = FileOutputStream(partFile)
         val buffer = ByteArray(8192)
-        var read: Int
         var curBytes = 0L
 
         try {
-            while (input.read(buffer).also { read = it } != -1) {
+            var read = input.read(buffer)
+            while (read != -1) {
                 output.write(buffer, 0, read)
                 curBytes += read
                 val pct = if (total > 0) ((curBytes * 100) / total).toInt() else 0
                 emit(DownloadState.Running(curBytes, total, pct))
+                read = input.read(buffer)
             }
             output.flush()
         } finally {

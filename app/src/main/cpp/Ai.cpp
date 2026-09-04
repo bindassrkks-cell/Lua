@@ -1,4 +1,4 @@
 #include <string>
 namespace AiNative {
-    std::string sanitizePrompt(const std::string& input) { return "Quranic Context: " + input; }
+    std::string sanitizePrompt(const std::string& input) { return "Islamic Context: " + input; }
 }

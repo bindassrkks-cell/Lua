@@ -1,4 +1,4 @@
 #include <string>
 namespace SocialNative {
-    std::string getModule() { return "Social.cpp active"; }
+    std::string getSocialFeed() { return "Social.cpp loaded"; }
 }

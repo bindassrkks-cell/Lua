@@ -1,3 +1,3 @@
 namespace FontNative {
-    const char* getQuranFont() { return "Amiri-Quran"; }
+    const char* getPrimaryQuranFont() { return "Amiri-Quran"; }
 }

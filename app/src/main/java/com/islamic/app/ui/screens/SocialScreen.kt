@@ -211,7 +211,7 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(modifier = Modifier.height(12.dp))
-                            Divider(color = DarkCardBorder)
+                            HorizontalDivider(color = DarkCardBorder)
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(post.translation, color = TextMuted, fontSize = 14.sp, lineHeight = 20.sp)
                         }
@@ -242,9 +242,7 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = EmeraldPrimary,
-                            unfocusedBorderColor = DarkCardBorder,
-                            focusedTextColor = TextPureWhite,
-                            unfocusedTextColor = TextPureWhite
+                            unfocusedBorderColor = DarkCardBorder
                         )
                     )
 

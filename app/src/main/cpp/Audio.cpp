@@ -1,4 +1,3 @@
-#include <string>
 namespace AudioNative {
-    int getSampleRate() { return 44100; }
+    int getAudioSampleRate() { return 44100; }
 }
