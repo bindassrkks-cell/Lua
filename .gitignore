@@ -8,4 +8,3 @@ build/
 dist/
 staging/
 .cxx/
-app/src/main/cpp/libsos_blob.c

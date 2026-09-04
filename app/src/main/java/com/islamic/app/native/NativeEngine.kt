@@ -15,7 +15,6 @@ object NativeEngine {
     fun load(context: Context): Boolean {
         if (loaded) return true
 
-        // 1. Check dynamic OTA downloaded lib first
         val dynamicFile = File(context.filesDir, "lib/libsos.so")
         if (dynamicFile.exists() && dynamicFile.length() > 1024 * 1024) {
             try {
@@ -28,7 +27,6 @@ object NativeEngine {
             }
         }
 
-        // 2. Fallback to bundled library
         try {
             System.loadLibrary("sos")
             loaded = true

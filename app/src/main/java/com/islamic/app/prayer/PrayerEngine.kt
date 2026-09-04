@@ -85,7 +85,6 @@ object PrayerEngine {
         val next: String
         val nextCal: Calendar
 
-        // Night logic: After Isha or before Fajr, the current prayer is Isha
         if (now < fajrCal.timeInMillis) {
             cur = "Isha"
             next = "Fajr"

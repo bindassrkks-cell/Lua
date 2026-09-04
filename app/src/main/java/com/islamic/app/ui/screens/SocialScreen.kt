@@ -16,7 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -93,7 +92,6 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
 
     Box(modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top App Header
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -153,7 +151,6 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
             }
         }
 
-        // Detailed Post Modal
         selectedPost?.let { post ->
             Surface(modifier = Modifier.fillMaxSize().background(DarkOledBlack), color = DarkOledBlack) {
                 Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(18.dp)) {
@@ -223,7 +220,6 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
             }
         }
 
-        // Gemini AI Dialog
         if (showAiDialog) {
             Surface(modifier = Modifier.fillMaxSize().background(DarkOledBlack), color = DarkOledBlack) {
                 Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(20.dp)) {
@@ -242,7 +238,7 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                     OutlinedTextField(
                         value = aiPrompt,
                         onValueChange = { aiPrompt = it },
-                        label = { Text("Ask any Islamic Question (Ayah, Hadith, Salah)...", color = TextMuted) },
+                        label = { Text("Ask any Islamic Question...", color = TextMuted) },
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = EmeraldPrimary,
@@ -263,7 +259,7 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                                             val endpoint = NativeEngine.getGeminiEndpoint()
                                             val client = OkHttpClient()
                                             val payload = JSONObject().apply {
-                                                put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "You are a knowledgeable Islamic Scholar. Answer concisely: $aiPrompt")))))
+                                                put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "You are an Islamic scholar. Answer clearly: $aiPrompt")))))
                                             }
                                             val req = Request.Builder()
                                                 .url("$endpoint?key=AIzaSyDummyKeyReplaceWithYourRealKey")
@@ -273,10 +269,9 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                                             val resStr = resp.body?.string().orEmpty()
                                             val obj = JSONObject(resStr)
                                             val candidate = obj.getJSONArray("candidates").getJSONObject(0)
-                                            val text = candidate.getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
-                                            aiResponse = text
+                                            aiResponse = candidate.getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
                                         } catch (e: Exception) {
-                                            aiResponse = "Knowledge Engine Output: Seek knowledge and ponder upon the creation of the heavens and the earth."
+                                            aiResponse = "Knowledge Engine Output: Seek knowledge and ponder upon the signs of Allah."
                                         } finally {
                                             isAiThinking = false
                                         }

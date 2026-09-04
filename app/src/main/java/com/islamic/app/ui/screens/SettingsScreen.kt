@@ -42,7 +42,6 @@ fun SettingsScreen(onClose: () -> Unit) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Exact Single Native Lib Card (No PAK card whatsoever)
             Card(
                 modifier = Modifier.fillMaxWidth().border(1.dp, DarkCardBorder, RoundedCornerShape(22.dp)),
                 colors = CardDefaults.cardColors(containerColor = DarkSurfaceCard)
