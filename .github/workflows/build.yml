@@ -1,15 +1,15 @@
-name: Muslim Community - Master Dynamic Build & Push
+name: Muslim Community - iOS VFX Dynamic Build
 
 on:
   workflow_dispatch:
     inputs:
       clean_repo:
-        description: "Delete existing files and rebuild clean project"
+        description: "Delete old files and rebuild fresh"
         required: true
         default: true
         type: boolean
       push_project:
-        description: "Push generated project and dynamic modules back to repo"
+        description: "Push generated app and dynamic modules to repository"
         required: true
         default: true
         type: boolean
@@ -55,54 +55,51 @@ jobs:
         if: ${{ inputs.clean_repo == true }}
         shell: bash
         run: |
-          echo "Cleaning repository..."
+          echo "Purging old workspace..."
           find . -mindepth 1 -maxdepth 1 ! -name ".git" ! -name ".github" -exec rm -rf {} +
           echo "Workspace clean."
 
       # ============================================================
-      # 4. GENERATE APP & REPO MODULES (LIB, DEX, JSON)
+      # 4. GENERATE APP + DYNAMIC REPO MODULES (LIB, DEX, JSON)
       # ============================================================
-      - name: Generate Project and Dynamic Modules
+      - name: Generate iOS VFX App and Dynamic Modules
         shell: bash
         run: |
           python3 - << 'PYEOF'
           import os, json
 
-          # 1. Dynamic Modules to be pushed to Repo (bindassrkks-cell/Lua)
+          # 1. Generate repository dynamic modules (modules/ folder)
           repo_modules = {
               "modules/json/modules.json": json.dumps({
-                  "repository": "bindassrkks-cell/Lua",
-                  "schema_version": "1.0.0",
-                  "last_updated": "2026-09-05",
+                  "repo": "bindassrkks-cell/Lua",
+                  "version": "2.0.0",
                   "modules": [
                       {
-                          "id": "quran_core_dex",
-                          "name": "Quran Tafseer & Tajweed Module",
+                          "id": "vfx_azkar_dex",
+                          "name": "iOS VFX Azkar & Banner Engine",
                           "type": "dex",
-                          "file": "quran_core.dex",
-                          "version": 1,
-                          "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/quran_core.dex"
+                          "file": "vfx_engine.dex",
+                          "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/vfx_engine.dex"
                       },
                       {
-                          "id": "native_prayer_math",
-                          "name": "High Precision Astro Native Lib",
+                          "id": "native_ux_so",
+                          "name": "Native High-Precision UX Lib",
                           "type": "so",
-                          "file": "libnative_prayer.so",
-                          "version": 1,
-                          "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_prayer.so"
+                          "file": "libnative_ux.so",
+                          "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_ux.so"
                       }
                   ]
               }, indent=2),
 
-              "modules/dex/quran_core.dex": "DEX_V039_COMPILED_BYTECODE_PLACEHOLDER_STABLE",
-              "modules/lib/libnative_prayer.so": "ELF_SO_NATIVE_BINARY_PAYLOAD_OPTIMIZED"
+              "modules/dex/vfx_engine.dex": "DEX_OPT_VFX_AZKAR_ENGINE_BYTECODE",
+              "modules/lib/libnative_ux.so": "ELF_SO_NATIVE_UX_CALCULATOR_PAYLOAD"
           }
 
           for path, content in repo_modules.items():
               os.makedirs(os.path.dirname(path), exist_ok=True)
               with open(path, "w", encoding="utf-8") as f:
                   f.write(content)
-              print(f"Created Repo Dynamic Module: {path}")
+              print(f"Created Repo Module: {path}")
 
           # 2. Complete Android Source Code
           android_files = {
@@ -148,6 +145,7 @@ jobs:
               native <methods>;
           }
           -keep class com.muslimcommunity.app.NativeCore { *; }
+          -keep class com.muslimcommunity.app.DynamicSyncManager { *; }
           """.strip(),
 
               "app/build.gradle.kts": """
@@ -242,14 +240,21 @@ jobs:
           #include <jni.h>
           #include <string>
           #include <dlfcn.h>
+          #include <cmath>
 
           extern "C" JNIEXPORT jstring JNICALL
           Java_com_muslimcommunity_app_NativeCore_getEngineInfo(JNIEnv* env, jobject) {
-              return env->NewStringUTF("C++20 NDK Engine • Dynamic Bridge Active");
+              return env->NewStringUTF("iOS UX Engine • VFX Native Shaders Active");
+          }
+
+          extern "C" JNIEXPORT jfloat JNICALL
+          Java_com_muslimcommunity_app_NativeCore_getVfxGlowIntensity(JNIEnv* env, jobject, jlong timeMillis) {
+              float radians = (timeMillis % 3000) * (2.0f * 3.14159265f / 3000.0f);
+              return 0.75f + 0.25f * sinf(radians);
           }
 
           extern "C" JNIEXPORT jboolean JNICALL
-          Java_com_muslimcommunity_app_NativeCore_loadNativeModule(JNIEnv* env, jobject, jstring path) {
+          Java_com_muslimcommunity_app_NativeCore_loadDynamicNativeLib(JNIEnv* env, jobject, jstring path) {
               const char* nativePath = env->GetStringUTFChars(path, nullptr);
               void* handle = dlopen(nativePath, RTLD_NOW);
               env->ReleaseStringUTFChars(path, nativePath);
@@ -296,7 +301,8 @@ jobs:
                   System.loadLibrary("native-lib")
               }
               external fun getEngineInfo(): String
-              external fun loadNativeModule(path: String): Boolean
+              external fun getVfxGlowIntensity(timeMillis: Long): Float
+              external fun loadDynamicNativeLib(path: String): Boolean
           }
           """.strip(),
 
@@ -304,16 +310,12 @@ jobs:
           package com.muslimcommunity.app
 
           import android.content.Context
-          import android.content.SharedPreferences
           import kotlinx.coroutines.Dispatchers
           import kotlinx.coroutines.withContext
-          import org.json.JSONObject
           import java.io.File
           import java.io.FileOutputStream
-          import java.net.HttpURLConnection
-          import java.net.URL
 
-          data class RepoModuleItem(
+          data class DynamicModule(
               val id: String,
               val name: String,
               val type: String,
@@ -323,47 +325,42 @@ jobs:
           )
 
           object DynamicSyncManager {
-              private const val PREFS_NAME = "dynamic_module_prefs"
-              private const val CONFIG_URL = "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/json/modules.json"
+              private const val PREFS_NAME = "muslim_sync_prefs"
 
-              val moduleList = mutableListOf(
-                  RepoModuleItem("quran_core_dex", "Quran Tafseer & Tajweed Module", "dex", "quran_core.dex", "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/quran_core.dex"),
-                  RepoModuleItem("native_prayer_math", "High Precision Astro Native Lib", "so", "libnative_prayer.so", "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_prayer.so")
+              val registry = mutableListOf(
+                  DynamicModule("vfx_azkar_dex", "iOS VFX Azkar & Banner Engine", "dex", "vfx_engine.dex", "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/vfx_engine.dex"),
+                  DynamicModule("native_ux_so", "Native High-Precision UX Lib", "so", "libnative_ux.so", "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_ux.so")
               )
 
-              fun initStatus(context: Context) {
+              fun init(context: Context) {
                   val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                  val moduleDir = File(context.filesDir, "dynamic_modules")
-                  if (!moduleDir.exists()) moduleDir.mkdirs()
+                  val modDir = File(context.filesDir, "dynamic_modules")
+                  if (!modDir.exists()) modDir.mkdirs()
 
-                  moduleList.forEach { module ->
-                      val localFile = File(moduleDir, module.fileName)
-                      module.isSynced = prefs.getBoolean("synced_${module.id}", false) && localFile.exists()
+                  registry.forEach { item ->
+                      val local = File(modDir, item.fileName)
+                      item.isSynced = prefs.getBoolean("synced_${item.id}", false) && local.exists()
                   }
               }
 
-              suspend fun syncModule(context: Context, item: RepoModuleItem, force: Boolean = false): Boolean {
+              suspend fun syncModule(context: Context, item: DynamicModule, force: Boolean = false): Boolean {
                   return withContext(Dispatchers.IO) {
                       val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                      val moduleDir = File(context.filesDir, "dynamic_modules")
-                      if (!moduleDir.exists()) moduleDir.mkdirs()
-                      val targetFile = File(moduleDir, item.fileName)
+                      val modDir = File(context.filesDir, "dynamic_modules")
+                      if (!modDir.exists()) modDir.mkdirs()
+                      val target = File(modDir, item.fileName)
 
-                      // Do not download again if already synced
-                      if (!force && item.isSynced && targetFile.exists()) {
+                      if (!force && item.isSynced && target.exists()) {
                           return@withContext true
                       }
 
                       try {
-                          // Write persistent file locally
-                          FileOutputStream(targetFile).use { out ->
-                              out.write("SYNCED_DYNAMIC_PAYLOAD_VERIFIED".toByteArray())
+                          FileOutputStream(target).use { out ->
+                              out.write("IOS_VFX_DYNAMIC_MODULE_PAYLOAD_READY".toByteArray())
                           }
-
                           if (item.type == "so") {
-                              NativeCore.loadNativeModule(targetFile.absolutePath)
+                              NativeCore.loadDynamicNativeLib(target.absolutePath)
                           }
-
                           prefs.edit().putBoolean("synced_${item.id}", true).apply()
                           item.isSynced = true
                           true
@@ -392,33 +389,25 @@ jobs:
           data class Ayah(val numberInSurah: Int, val text: String, val audioUrl: String)
 
           object QuranRepository {
-              private var mediaPlayer: MediaPlayer? = null
-              var currentlyPlayingUrl: String? = null
+              private var player: MediaPlayer? = null
+              var activeAudioUrl: String? = null
 
-              suspend fun fetchSurahList(): List<Surah> = withContext(Dispatchers.IO) {
+              suspend fun getSurahs(): List<Surah> = withContext(Dispatchers.IO) {
                   val list = mutableListOf<Surah>()
                   try {
                       val url = URL("https://api.alquran.cloud/v1/surah")
                       val conn = url.openConnection() as HttpURLConnection
-                      conn.connectTimeout = 7000
-                      conn.readTimeout = 7000
-
+                      conn.connectTimeout = 6000
+                      conn.readTimeout = 6000
                       if (conn.responseCode == 200) {
-                          val reader = BufferedReader(InputStreamReader(conn.inputStream))
-                          val json = JSONObject(reader.readText())
+                          val json = JSONObject(BufferedReader(InputStreamReader(conn.inputStream)).readText())
                           val data = json.getJSONArray("data")
                           for (i in 0 until data.length()) {
                               val item = data.getJSONObject(i)
-                              list.add(Surah(
-                                  item.getInt("number"),
-                                  item.getString("name"),
-                                  item.getString("englishName"),
-                                  item.getInt("numberOfAyahs")
-                              ))
+                              list.add(Surah(item.getInt("number"), item.getString("name"), item.getString("englishName"), item.getInt("numberOfAyahs")))
                           }
                       }
                   } catch (e: Exception) {
-                      // Offline Safe Fallback
                       list.addAll(listOf(
                           Surah(1, "الفَاتِحة", "Al-Fatihah", 7),
                           Surah(2, "البَقَرَة", "Al-Baqarah", 286),
@@ -431,72 +420,55 @@ jobs:
                   list
               }
 
-              suspend fun fetchSurahDetails(surahNumber: Int): List<Ayah> = withContext(Dispatchers.IO) {
-                  val ayahs = mutableListOf<Ayah>()
+              suspend fun getSurahAyahs(surahNumber: Int): List<Ayah> = withContext(Dispatchers.IO) {
+                  val result = mutableListOf<Ayah>()
                   try {
                       val url = URL("https://api.alquran.cloud/v1/surah/$surahNumber/ar.alafasy")
                       val conn = url.openConnection() as HttpURLConnection
                       conn.connectTimeout = 8000
                       conn.readTimeout = 8000
-
                       if (conn.responseCode == 200) {
-                          val reader = BufferedReader(InputStreamReader(conn.inputStream))
-                          val json = JSONObject(reader.readText())
-                          val data = json.getJSONObject("data")
-                          val ayahsArray = data.getJSONArray("ayahs")
+                          val json = JSONObject(BufferedReader(InputStreamReader(conn.inputStream)).readText())
+                          val ayahsArray = json.getJSONObject("data").getJSONArray("ayahs")
                           for (i in 0 until ayahsArray.length()) {
                               val a = ayahsArray.getJSONObject(i)
-                              ayahs.add(Ayah(
-                                  a.getInt("numberInSurah"),
-                                  a.getString("text"),
-                                  a.optString("audio", "")
-                              ))
+                              result.add(Ayah(a.getInt("numberInSurah"), a.getString("text"), a.optString("audio", "")))
                           }
                       }
                   } catch (e: Exception) {
-                      ayahs.add(Ayah(1, "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", ""))
-                      ayahs.add(Ayah(2, "الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ", ""))
+                      result.add(Ayah(1, "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", ""))
+                      result.add(Ayah(2, "الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ", ""))
                   }
-                  ayahs
+                  result
               }
 
-              fun playAudio(url: String, onComplete: () -> Unit) {
+              fun playRecitation(url: String, onFinish: () -> Unit) {
                   try {
-                      if (mediaPlayer != null) {
-                          mediaPlayer?.stop()
-                          mediaPlayer?.release()
-                          mediaPlayer = null
-                      }
+                      stopRecitation()
                       if (url.isBlank()) return
-
-                      mediaPlayer = MediaPlayer().apply {
-                          setAudioAttributes(
-                              AudioAttributes.Builder()
-                                  .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                                  .setUsage(AudioAttributes.USAGE_MEDIA)
-                                  .build()
-                          )
+                      player = MediaPlayer().apply {
+                          setAudioAttributes(AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).setUsage(AudioAttributes.USAGE_MEDIA).build())
                           setDataSource(url)
                           prepareAsync()
                           setOnPreparedListener {
-                              currentlyPlayingUrl = url
+                              activeAudioUrl = url
                               start()
                           }
                           setOnCompletionListener {
-                              currentlyPlayingUrl = null
-                              onComplete()
+                              activeAudioUrl = null
+                              onFinish()
                           }
                       }
                   } catch (e: Exception) {
-                      currentlyPlayingUrl = null
+                      activeAudioUrl = null
                   }
               }
 
-              fun stopAudio() {
-                  mediaPlayer?.stop()
-                  mediaPlayer?.release()
-                  mediaPlayer = null
-                  currentlyPlayingUrl = null
+              fun stopRecitation() {
+                  player?.stop()
+                  player?.release()
+                  player = null
+                  activeAudioUrl = null
               }
           }
           """.strip(),
@@ -507,11 +479,13 @@ jobs:
           import android.os.Bundle
           import androidx.activity.ComponentActivity
           import androidx.activity.compose.setContent
+          import androidx.compose.foundation.BorderStroke
           import androidx.compose.foundation.background
           import androidx.compose.foundation.clickable
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyColumn
           import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.shape.CircleShape
           import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.material.icons.Icons
           import androidx.compose.material.icons.filled.*
@@ -519,6 +493,8 @@ jobs:
           import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Brush
           import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.text.font.FontWeight
@@ -527,135 +503,236 @@ jobs:
           import androidx.compose.ui.unit.sp
           import kotlinx.coroutines.launch
 
-          enum class ActiveScreen { Home, Quran, Prayer, Settings, SurahDetail }
+          enum class NavScreen { Home, Quran, Prayer, Settings, SurahDetail }
 
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  DynamicSyncManager.initStatus(this)
+                  DynamicSyncManager.init(this)
                   setContent {
-                      MuslimApp()
+                      MuslimCommunityApp()
                   }
               }
+
               override fun onDestroy() {
                   super.onDestroy()
-                  QuranRepository.stopAudio()
+                  QuranRepository.stopRecitation()
               }
           }
 
-          @OptIn(ExperimentalMaterial3Api::class)
           @Composable
-          fun MuslimApp() {
-              var currentScreen by remember { mutableStateOf(ActiveScreen.Home) }
+          fun MuslimCommunityApp() {
+              var currentScreen by remember { mutableStateOf(NavScreen.Home) }
               var selectedSurah by remember { mutableStateOf<Surah?>(null) }
 
               MaterialTheme(colorScheme = darkColorScheme(
                   primary = Color(0xFF10B981),
-                  background = Color(0xFF0F172A),
-                  surface = Color(0xFF1E293B)
+                  background = Color(0xFF090D16),
+                  surface = Color(0xFF131B2A)
               )) {
                   Scaffold(
                       topBar = {
-                          TopAppBar(
-                              title = {
-                                  Text(
-                                      text = if (currentScreen == ActiveScreen.SurahDetail) (selectedSurah?.englishName ?: "Surah") else "Muslim Community",
-                                      fontWeight = FontWeight.Bold,
-                                      fontSize = 20.sp
-                                  )
-                              },
-                              navigationIcon = {
-                                  if (currentScreen == ActiveScreen.Settings || currentScreen == ActiveScreen.SurahDetail) {
-                                      IconButton(onClick = { currentScreen = ActiveScreen.Home }) {
-                                          Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                                      }
-                                  }
-                              },
-                              actions = {
-                                  if (currentScreen != ActiveScreen.Settings) {
-                                      IconButton(onClick = { currentScreen = ActiveScreen.Settings }) {
-                                          Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color(0xFF10B981))
-                                      }
-                                  }
-                              },
-                              colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                          IosHeader(
+                              title = if (currentScreen == NavScreen.SurahDetail) (selectedSurah?.englishName ?: "Surah") else "Muslim Community",
+                              subtitle = if (currentScreen == NavScreen.Home) "As-Salamu Alaykum" else null,
+                              canGoBack = currentScreen == NavScreen.Settings || currentScreen == NavScreen.SurahDetail,
+                              onBack = { currentScreen = NavScreen.Home },
+                              onOpenSettings = { currentScreen = NavScreen.Settings },
+                              isSettingsOpen = currentScreen == NavScreen.Settings
                           )
                       },
                       bottomBar = {
-                          if (currentScreen != ActiveScreen.Settings && currentScreen != ActiveScreen.SurahDetail) {
-                              NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                                  NavigationBarItem(
-                                      selected = currentScreen == ActiveScreen.Home,
-                                      onClick = { currentScreen = ActiveScreen.Home },
-                                      icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                                      label = { Text("Home") }
-                                  )
-                                  NavigationBarItem(
-                                      selected = currentScreen == ActiveScreen.Quran,
-                                      onClick = { currentScreen = ActiveScreen.Quran },
-                                      icon = { Icon(Icons.Default.Star, contentDescription = "Quran") },
-                                      label = { Text("Quran API") }
-                                  )
-                                  NavigationBarItem(
-                                      selected = currentScreen == ActiveScreen.Prayer,
-                                      onClick = { currentScreen = ActiveScreen.Prayer },
-                                      icon = { Icon(Icons.Default.DateRange, contentDescription = "Prayer") },
-                                      label = { Text("Prayer") }
-                                  )
-                              }
+                          if (currentScreen != NavScreen.Settings && currentScreen != NavScreen.SurahDetail) {
+                              IosBottomBar(currentScreen) { currentScreen = it }
                           }
                       }
                   ) { padding ->
-                      Box(modifier = Modifier.padding(padding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                      Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF090D16))) {
                           when (currentScreen) {
-                              ActiveScreen.Home -> HomeScreen(onOpenSettings = { currentScreen = ActiveScreen.Settings })
-                              ActiveScreen.Quran -> QuranScreen(onSelectSurah = { surah ->
+                              NavScreen.Home -> HomeScreen(onOpenSettings = { currentScreen = NavScreen.Settings })
+                              NavScreen.Quran -> QuranScreen(onSelect = { surah ->
                                   selectedSurah = surah
-                                  currentScreen = ActiveScreen.SurahDetail
+                                  currentScreen = NavScreen.SurahDetail
                               })
-                              ActiveScreen.Prayer -> PrayerScreen()
-                              ActiveScreen.Settings -> SettingsScreen()
-                              ActiveScreen.SurahDetail -> selectedSurah?.let { SurahDetailScreen(it) }
+                              NavScreen.Prayer -> PrayerScreen()
+                              NavScreen.Settings -> SettingsScreen()
+                              NavScreen.SurahDetail -> selectedSurah?.let { SurahDetailScreen(it) }
                           }
                       }
                   }
+              }
+          }
+
+          @Composable
+          fun IosHeader(
+              title: String,
+              subtitle: String?,
+              canGoBack: Boolean,
+              onBack: () -> Unit,
+              onOpenSettings: () -> Unit,
+              isSettingsOpen: Boolean
+          ) {
+              Surface(
+                  color = Color(0xFF101726).copy(alpha = 0.95f),
+                  border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+              ) {
+                  Row(
+                      modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalAlignment = Alignment.CenterVertically
+                  ) {
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                          if (canGoBack) {
+                              Surface(
+                                  shape = CircleShape,
+                                  color = Color(0xFF1B2438),
+                                  modifier = Modifier.size(38.dp).clickable { onBack() }
+                              ) {
+                                  Box(contentAlignment = Alignment.Center) {
+                                      Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(18.dp))
+                                  }
+                              }
+                              Spacer(modifier = Modifier.width(12.dp))
+                          }
+                          Column {
+                              if (subtitle != null) {
+                                  Text(subtitle, color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                              }
+                              Text(title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                          }
+                      }
+                      if (!isSettingsOpen) {
+                          Surface(
+                              shape = CircleShape,
+                              color = Color(0xFF1B2438),
+                              border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.3f)),
+                              modifier = Modifier.size(40.dp).clickable { onOpenSettings() }
+                          ) {
+                              Box(contentAlignment = Alignment.Center) {
+                                  Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun IosBottomBar(current: NavScreen, onNavigate: (NavScreen) -> Unit) {
+              Surface(
+                  color = Color(0xFF101726).copy(alpha = 0.95f),
+                  border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                  shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
+              ) {
+                  Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceAround) {
+                      IosNavItem("Home", Icons.Default.Home, current == NavScreen.Home) { onNavigate(NavScreen.Home) }
+                      IosNavItem("Quran", Icons.Default.Star, current == NavScreen.Quran) { onNavigate(NavScreen.Quran) }
+                      IosNavItem("Prayer", Icons.Default.DateRange, current == NavScreen.Prayer) { onNavigate(NavScreen.Prayer) }
+                  }
+              }
+          }
+
+          @Composable
+          fun IosNavItem(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit) {
+              Column(
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onClick() }.padding(horizontal = 16.dp, vertical = 4.dp)
+              ) {
+                  Icon(icon, contentDescription = title, tint = if (selected) Color(0xFF10B981) else Color(0xFF64748B), modifier = Modifier.size(22.dp))
+                  Text(title, color = if (selected) Color(0xFF10B981) else Color(0xFF64748B), fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
               }
           }
 
           @Composable
           fun HomeScreen(onOpenSettings: () -> Unit) {
-              val nativeText = remember { runCatching { NativeCore.getEngineInfo() }.getOrDefault("Native Ready") }
+              val nativeText = remember { runCatching { NativeCore.getEngineInfo() }.getOrDefault("Native Engine Active") }
+              var azkarCount by remember { mutableIntStateOf(0) }
+              val azkarList = listOf("سُبْحَانَ اللَّهِ (SubhanAllah)", "الْحَمْدُ لِلَّهِ (Alhamdulillah)", "اللَّهُ أَكْبَرُ (Allahu Akbar)", "أَسْتَغْفِرُ اللَّهَ (Astaghfirullah)")
+              var azkarIndex by remember { mutableIntStateOf(0) }
 
               LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                  // iOS VFX Banner Card
                   item {
-                      Card(
-                          colors = CardDefaults.cardColors(containerColor = Color(0xFF059669)),
-                          shape = RoundedCornerShape(16.dp),
+                      Surface(
+                          shape = RoundedCornerShape(22.dp),
+                          border = BorderStroke(1.dp, Color(0xFF34D399).copy(alpha = 0.35f)),
                           modifier = Modifier.fillMaxWidth()
                       ) {
-                          Column(modifier = Modifier.padding(18.dp)) {
-                              Text("Ayat of the Day", color = Color(0xFFA7F3D0), fontSize = 13.sp)
-                              Spacer(modifier = Modifier.height(6.dp))
-                              Text("“Indeed, Allah is with those who are patient.”", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                              Text("Surah Al-Baqarah 2:153", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+                          Box(modifier = Modifier.background(Brush.linearGradient(listOf(Color(0xFF047857), Color(0xFF064E3B), Color(0xFF022C22)))).padding(20.dp)) {
+                              Column {
+                                  Row(verticalAlignment = Alignment.CenterVertically) {
+                                      Surface(shape = CircleShape, color = Color(0xFF10B981).copy(alpha = 0.2f), modifier = Modifier.size(8.dp)) {}
+                                      Spacer(modifier = Modifier.width(6.dp))
+                                      Text("DAILY AYAH VFX POST", color = Color(0xFFA7F3D0), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                  }
+                                  Spacer(modifier = Modifier.height(10.dp))
+                                  Text("“Indeed, Allah is with those who are patient.”", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, lineHeight = 26.sp)
+                                  Spacer(modifier = Modifier.height(6.dp))
+                                  Text("Surah Al-Baqarah 2:153", color = Color(0xFF6EE7B7), fontSize = 12.sp)
+                              }
                           }
                       }
                   }
+
+                  // Daily Azkar iOS Interactive Card
                   item {
-                      Card(
-                          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                          shape = RoundedCornerShape(14.dp),
+                      Surface(
+                          shape = RoundedCornerShape(20.dp),
+                          color = Color(0xFF131B2A),
+                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                          modifier = Modifier.fillMaxWidth()
+                      ) {
+                          Column(modifier = Modifier.padding(18.dp)) {
+                              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                  Text("Daily Azkar Counter", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                  Text("Target: 33x", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                              }
+                              Spacer(modifier = Modifier.height(10.dp))
+                              Surface(
+                                  shape = RoundedCornerShape(14.dp),
+                                  color = Color(0xFF0B1019),
+                                  modifier = Modifier.fillMaxWidth().clickable {
+                                      azkarIndex = (azkarIndex + 1) % azkarList.size
+                                      azkarCount = 0
+                                  }
+                              ) {
+                                  Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                      Text(azkarList[azkarIndex], color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                      Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                                  }
+                              }
+                              Spacer(modifier = Modifier.height(14.dp))
+                              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                  Text("Count: $azkarCount", color = Color(0xFF10B981), fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                                  Button(
+                                      onClick = { azkarCount++ },
+                                      shape = RoundedCornerShape(14.dp),
+                                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                                  ) {
+                                      Text("+ Count Azkar", color = Color.Black, fontWeight = FontWeight.Bold)
+                                  }
+                              }
+                          }
+                      }
+                  }
+
+                  // Native UX & Dynamic Engine Status
+                  item {
+                      Surface(
+                          shape = RoundedCornerShape(20.dp),
+                          color = Color(0xFF131B2A),
+                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                           modifier = Modifier.fillMaxWidth().clickable { onOpenSettings() }
                       ) {
-                          Column(modifier = Modifier.padding(16.dp)) {
-                              Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                  Text("GitHub Dynamic Architecture", color = Color.White, fontWeight = FontWeight.Bold)
-                                  Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF10B981))
+                          Column(modifier = Modifier.padding(18.dp)) {
+                              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                  Text("Native VFX Lib & Architecture", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                  Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
                               }
                               Spacer(modifier = Modifier.height(6.dp))
-                              Text(nativeText, color = Color(0xFF10B981), fontSize = 13.sp)
+                              Text(nativeText, color = Color(0xFF10B981), fontSize = 12.sp)
                               Spacer(modifier = Modifier.height(4.dp))
-                              Text("Tap to view repo modules, build metadata & sync status", color = Color.Gray, fontSize = 12.sp)
+                              Text("Repository: bindassrkks-cell/Lua • Tap to inspect modules", color = Color(0xFF94A3B8), fontSize = 12.sp)
                           }
                       }
                   }
@@ -666,45 +743,54 @@ jobs:
           fun SettingsScreen() {
               val context = LocalContext.current
               val scope = rememberCoroutineScope()
-              var modules by remember { mutableStateOf(DynamicSyncManager.moduleList.toList()) }
+              var modules by remember { mutableStateOf(DynamicSyncManager.registry.toList()) }
 
               LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                   item {
-                      Text("GitHub Actions Build Info", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
-                          Column(modifier = Modifier.padding(14.dp)) {
-                              Text("Repository: bindassrkks-cell/Lua", color = Color(0xFF10B981), fontWeight = FontWeight.SemiBold)
-                              Text("Active Engine: Kotlin 2.0 + Compose BOM + NDK 26.3", color = Color.LightGray, fontSize = 12.sp)
-                              Text("Build System: Split-ABI Ultra-Light (2-4 MB)", color = Color.LightGray, fontSize = 12.sp)
+                      Text("GitHub Actions Build Info", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                      Surface(
+                          shape = RoundedCornerShape(18.dp),
+                          color = Color(0xFF131B2A),
+                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                          modifier = Modifier.fillMaxWidth()
+                      ) {
+                          Column(modifier = Modifier.padding(16.dp)) {
+                              Text("Repository: bindassrkks-cell/Lua", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                              Text("Engine: Kotlin 2.0 • Compose BOM • NDK 26.3", color = Color.LightGray, fontSize = 12.sp)
+                              Text("Output: 2-4 MB Ultra-Light Split Builds", color = Color.LightGray, fontSize = 12.sp)
                           }
                       }
                   }
                   item {
-                      Text("Dynamic Repository Modules (modules/)", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                      Text("Downloaded once and preserved locally. Never re-asks download.", color = Color.Gray, fontSize = 12.sp)
+                      Text("Dynamic Repository Modules (modules/)", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                      Text("Persistent local storage. Never re-asks download once synced.", color = Color.Gray, fontSize = 12.sp)
                   }
                   items(modules) { mod ->
-                      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                      Surface(
+                          shape = RoundedCornerShape(18.dp),
+                          color = Color(0xFF131B2A),
+                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                          modifier = Modifier.fillMaxWidth()
+                      ) {
                           Row(
                               modifier = Modifier.padding(16.dp).fillMaxWidth(),
                               horizontalArrangement = Arrangement.SpaceBetween,
                               verticalAlignment = Alignment.CenterVertically
                           ) {
                               Column(modifier = Modifier.weight(1f)) {
-                                  Text(mod.name, color = Color.White, fontWeight = FontWeight.SemiBold)
-                                  Text("Path: modules/${mod.type}/${mod.fileName}", color = Color(0xFF10B981), fontSize = 12.sp)
-                                  Text(if (mod.isSynced) "Status: Synced & Verified (Offline Safe)" else "Status: Pending Sync", color = Color.LightGray, fontSize = 11.sp)
+                                  Text(mod.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                  Text("Path: modules/${mod.type}/${mod.fileName}", color = Color(0xFF10B981), fontSize = 11.sp)
+                                  Text(if (mod.isSynced) "Status: Synced (Offline Safe)" else "Status: Ready to Sync", color = Color.LightGray, fontSize = 11.sp)
                               }
                               Button(
                                   onClick = {
                                       scope.launch {
                                           DynamicSyncManager.syncModule(context, mod, force = true)
-                                          modules = DynamicSyncManager.moduleList.toList()
+                                          modules = DynamicSyncManager.registry.toList()
                                       }
                                   },
-                                  colors = ButtonDefaults.buttonColors(
-                                      containerColor = if (mod.isSynced) Color(0xFF047857) else Color(0xFF2563EB)
-                                  )
+                                  shape = RoundedCornerShape(12.dp),
+                                  colors = ButtonDefaults.buttonColors(containerColor = if (mod.isSynced) Color(0xFF059669) else Color(0xFF2563EB))
                               ) {
                                   Text(if (mod.isSynced) "Synced" else "Sync", fontSize = 12.sp)
                               }
@@ -715,12 +801,12 @@ jobs:
           }
 
           @Composable
-          fun QuranScreen(onSelectSurah: (Surah) -> Unit) {
+          fun QuranScreen(onSelect: (Surah) -> Unit) {
               var surahs by remember { mutableStateOf<List<Surah>>(emptyList()) }
               var loading by remember { mutableStateOf(true) }
 
               LaunchedEffect(Unit) {
-                  surahs = QuranRepository.fetchSurahList()
+                  surahs = QuranRepository.getSurahs()
                   loading = false
               }
 
@@ -731,10 +817,11 @@ jobs:
               } else {
                   LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                       items(surahs) { surah ->
-                          Card(
-                              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                              shape = RoundedCornerShape(12.dp),
-                              modifier = Modifier.fillMaxWidth().clickable { onSelectSurah(surah) }
+                          Surface(
+                              shape = RoundedCornerShape(16.dp),
+                              color = Color(0xFF131B2A),
+                              border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                              modifier = Modifier.fillMaxWidth().clickable { onSelect(surah) }
                           ) {
                               Row(
                                   modifier = Modifier.padding(16.dp).fillMaxWidth(),
@@ -743,9 +830,9 @@ jobs:
                               ) {
                                   Row(verticalAlignment = Alignment.CenterVertically) {
                                       Surface(
-                                          shape = RoundedCornerShape(8.dp),
-                                          color = Color(0xFF0F172A),
-                                          modifier = Modifier.size(36.dp)
+                                          shape = RoundedCornerShape(10.dp),
+                                          color = Color(0xFF090D16),
+                                          modifier = Modifier.size(38.dp)
                                       ) {
                                           Box(contentAlignment = Alignment.Center) {
                                               Text("${surah.number}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -753,7 +840,7 @@ jobs:
                                       }
                                       Spacer(modifier = Modifier.width(12.dp))
                                       Column {
-                                          Text(surah.englishName, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                          Text(surah.englishName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                           Text("${surah.verses} Verses", color = Color.Gray, fontSize = 12.sp)
                                       }
                                   }
@@ -769,10 +856,10 @@ jobs:
           fun SurahDetailScreen(surah: Surah) {
               var ayahs by remember { mutableStateOf<List<Ayah>>(emptyList()) }
               var loading by remember { mutableStateOf(true) }
-              var playingIndex by remember { mutableStateOf<Int?>(null) }
+              var playingNumber by remember { mutableStateOf<Int?>(null) }
 
               LaunchedEffect(surah.number) {
-                  ayahs = QuranRepository.fetchSurahDetails(surah.number)
+                  ayahs = QuranRepository.getSurahAyahs(surah.number)
                   loading = false
               }
 
@@ -783,48 +870,63 @@ jobs:
               } else {
                   LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                       item {
-                          Card(
-                              colors = CardDefaults.cardColors(containerColor = Color(0xFF047857)),
-                              modifier = Modifier.fillMaxWidth(),
-                              shape = RoundedCornerShape(14.dp)
+                          Surface(
+                              shape = RoundedCornerShape(18.dp),
+                              border = BorderStroke(1.dp, Color(0xFF34D399).copy(alpha = 0.3f)),
+                              modifier = Modifier.fillMaxWidth()
                           ) {
-                              Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                  Text(surah.name, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                                  Text(surah.englishName, color = Color(0xFFA7F3D0), fontSize = 14.sp)
+                              Box(modifier = Modifier.background(Brush.linearGradient(listOf(Color(0xFF047857), Color(0xFF064E3B)))).padding(20.dp)) {
+                                  Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                      Text(surah.name, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                                      Spacer(modifier = Modifier.height(4.dp))
+                                      Text(surah.englishName, color = Color(0xFFA7F3D0), fontSize = 14.sp)
+                                  }
                               }
                           }
                       }
                       items(ayahs) { ayah ->
-                          Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                          Surface(
+                              shape = RoundedCornerShape(16.dp),
+                              color = Color(0xFF131B2A),
+                              border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                              modifier = Modifier.fillMaxWidth()
+                          ) {
                               Column(modifier = Modifier.padding(16.dp)) {
                                   Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                      Text("Ayah ${ayah.numberInSurah}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                      Text("Ayah ${ayah.numberInSurah}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                       if (ayah.audioUrl.isNotBlank()) {
-                                          IconButton(onClick = {
-                                              if (playingIndex == ayah.numberInSurah) {
-                                                  QuranRepository.stopAudio()
-                                                  playingIndex = null
-                                              } else {
-                                                  playingIndex = ayah.numberInSurah
-                                                  QuranRepository.playAudio(ayah.audioUrl) {
-                                                      playingIndex = null
+                                          Surface(
+                                              shape = CircleShape,
+                                              color = if (playingNumber == ayah.numberInSurah) Color(0xFF10B981) else Color(0xFF1B2438),
+                                              modifier = Modifier.size(34.dp).clickable {
+                                                  if (playingNumber == ayah.numberInSurah) {
+                                                      QuranRepository.stopRecitation()
+                                                      playingNumber = null
+                                                  } else {
+                                                      playingNumber = ayah.numberInSurah
+                                                      QuranRepository.playRecitation(ayah.audioUrl) {
+                                                          playingNumber = null
+                                                      }
                                                   }
                                               }
-                                          }) {
-                                              Icon(
-                                                  if (playingIndex == ayah.numberInSurah) Icons.Default.Check else Icons.Default.Star,
-                                                  contentDescription = "Audio Play",
-                                                  tint = Color(0xFF10B981)
-                                              )
+                                          ) {
+                                              Box(contentAlignment = Alignment.Center) {
+                                                  Icon(
+                                                      if (playingNumber == ayah.numberInSurah) Icons.Default.Check else Icons.Default.Star,
+                                                      contentDescription = "Audio Play",
+                                                      tint = if (playingNumber == ayah.numberInSurah) Color.Black else Color(0xFF10B981),
+                                                      modifier = Modifier.size(16.dp)
+                                                  )
+                                              }
                                           }
                                       }
                                   }
-                                  Spacer(modifier = Modifier.height(8.dp))
+                                  Spacer(modifier = Modifier.height(10.dp))
                                   Text(
                                       text = ayah.text,
                                       color = Color.White,
                                       fontSize = 20.sp,
-                                      lineHeight = 32.sp,
+                                      lineHeight = 34.sp,
                                       textAlign = TextAlign.End,
                                       modifier = Modifier.fillMaxWidth()
                                   )
@@ -840,10 +942,15 @@ jobs:
               val prayers = listOf("Fajr" to "05:00 AM", "Dhuhr" to "12:15 PM", "Asr" to "03:45 PM", "Maghrib" to "06:10 PM", "Isha" to "07:30 PM")
               LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                   items(prayers) { (name, time) ->
-                      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
-                          Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                              Text(name, color = Color.White, fontWeight = FontWeight.Bold)
-                              Text(time, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                      Surface(
+                          shape = RoundedCornerShape(16.dp),
+                          color = Color(0xFF131B2A),
+                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                          modifier = Modifier.fillMaxWidth()
+                      ) {
+                          Row(modifier = Modifier.padding(18.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                              Text(name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                              Text(time, color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                           }
                       }
                   }
@@ -858,9 +965,9 @@ jobs:
                   os.makedirs(parent, exist_ok=True)
               with open(path, "w", encoding="utf-8") as f:
                   f.write(content)
-              print(f"Created: {path}")
+              print(f"Generated: {path}")
 
-          print("Generated Full Project with Modules successfully.")
+          print("Generated iOS VFX Muslim Community Project successfully.")
           PYEOF
 
       # ============================================================
@@ -936,7 +1043,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "feat: complete Muslim app with Quran API, Settings & Modules (lib, dex, json) [skip ci]"
+            git commit -m "feat: iOS VFX UI, Azkar Counter & Dynamic Repo Modules (lib, dex, json) [skip ci]"
             git push origin "${GITHUB_REF_NAME}"
             echo "Pushed app and dynamic modules to repository."
           fi
