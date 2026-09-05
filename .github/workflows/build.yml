@@ -1,10 +1,16 @@
-name: Muslim Community - Gemini Build
+name: Muslim Community - AI Generate Build Push
 
 on:
   workflow_dispatch:
     inputs:
-      replace_project:
-        description: "Replace existing Android project with Gemini generated project"
+      clean_repo:
+        description: "Delete existing project files and generate a new project"
+        required: true
+        default: true
+        type: boolean
+
+      push_project:
+        description: "Push generated project back to repository"
         required: true
         default: true
         type: boolean
@@ -19,19 +25,21 @@ env:
   MIN_SDK: "24"
   NDK_VERSION: "29.0.14206865"
   CMAKE_VERSION: "3.22.1"
-  GEMINI_MODEL: "gemini-3.7-flash"
+
+  # Current Google documentation lists Gemini 3.8 Flash.
+  GEMINI_MODEL: "gemini-3.8-flash"
 
 jobs:
 
-  generate-build:
+  muslim-community:
 
     runs-on: ubuntu-24.04
 
     steps:
 
-      # ----------------------------------------------------------
-      # CHECKOUT
-      # ----------------------------------------------------------
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,116 +47,131 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ----------------------------------------------------------
-      # GIT CONFIG
-      # ----------------------------------------------------------
+      # ============================================================
+      # 2. GIT CONFIG
+      # ============================================================
 
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      # ----------------------------------------------------------
-      # CHECK GEMINI SECRET
-      # ----------------------------------------------------------
+      # ============================================================
+      # 3. CHECK GEMINI KEY
+      # ============================================================
 
       - name: Check Gemini API key
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: bash
         run: |
+          set -euo pipefail
+
           if [ -z "${GEMINI_API_KEY:-}" ]; then
-            echo "::error::GEMINI_API_KEY secret is missing."
+            echo "::error::GEMINI_API_KEY is missing."
             echo ""
-            echo "Go to:"
-            echo "Repository -> Settings -> Secrets and variables -> Actions"
-            echo "Then create:"
+            echo "Add this repository secret:"
+            echo ""
+            echo "Settings"
+            echo " -> Secrets and variables"
+            echo " -> Actions"
+            echo " -> New repository secret"
+            echo ""
+            echo "Name:"
             echo "GEMINI_API_KEY"
+            echo ""
+            echo "Do NOT put the API key inside build.yml."
             exit 1
           fi
 
-          echo "Gemini API key detected."
+          echo "Gemini API key is available."
 
-      # ----------------------------------------------------------
-      # TOOLS
-      # ----------------------------------------------------------
+      # ============================================================
+      # 4. INSTALL TOOLS
+      # ============================================================
 
-      - name: Install tools
+      - name: Install required tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq curl unzip git
+          sudo apt-get install -y \
+            curl \
+            jq \
+            unzip \
+            git \
+            zip
 
-      # ----------------------------------------------------------
-      # BACKUP CURRENT BRANCH
-      # ----------------------------------------------------------
+      # ============================================================
+      # 5. BACKUP CURRENT REPOSITORY
+      # ============================================================
 
-      - name: Backup repository
-        if: ${{ inputs.replace_project == true }}
+      - name: Create backup branch
+        if: ${{ inputs.clean_repo == true }}
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           CURRENT_BRANCH="${GITHUB_REF_NAME}"
-          BACKUP_BRANCH="backup-before-gemini-${GITHUB_RUN_ID}"
+          BACKUP_BRANCH="backup-before-muslim-ai-${GITHUB_RUN_ID}"
 
           echo "Creating backup branch:"
-          echo "$BACKUP_BRANCH"
+          echo "${BACKUP_BRANCH}"
 
-          git checkout -b "$BACKUP_BRANCH"
-          git push origin "$BACKUP_BRANCH" || true
+          git checkout -b "${BACKUP_BRANCH}"
+          git push origin "${BACKUP_BRANCH}" || true
 
-          git checkout "$CURRENT_BRANCH"
+          git checkout "${CURRENT_BRANCH}"
 
-      # ----------------------------------------------------------
-      # GEMINI REQUEST
-      # ----------------------------------------------------------
+      # ============================================================
+      # 6. GENERATE PROJECT WITH GEMINI
+      # ============================================================
 
-      - name: Generate complete Android project with Gemini
+      - name: Generate Muslim Community project
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         shell: bash
         run: |
-
           set -euo pipefail
 
-          cat > /tmp/request.json <<'JSON'
+          cat > /tmp/gemini_request.json <<'JSON'
           {
             "contents": [
               {
                 "role": "user",
                 "parts": [
                   {
-                    "text": "Create a COMPLETE compile-ready Android Studio project named MuslimCommunity. Generate every required source file. Technology requirements: Kotlin, Jetpack Compose, Material 3, Gradle Kotlin DSL, Java 17, compileSdk 36, targetSdk 36, minSdk 24, Android NDK, CMake and a small safe JNI C++ layer. Package name must be com.muslimcommunity.app. Compose must handle the UI. Kotlin must handle Android application logic, ViewModels and repositories. C++ must only handle native functionality through JNI. Include MainActivity, navigation, onboarding, home, Quran, Hadith, prayer architecture, masjid section, community posts, quiz, profile, settings, dark/light theme, loading states, error states and offline-safe architecture. Include Supabase REST/realtime architecture. Never hard-code secrets. Supabase values must come from BuildConfig or environment values. Include settings.gradle.kts, root build.gradle.kts, app/build.gradle.kts, gradle.properties, gradle/libs.versions.toml if needed, AndroidManifest.xml, all Kotlin files, all Compose UI files, resources, CMakeLists.txt, C++ JNI source, README.md and required Gradle files. Do not use external services that require undocumented credentials. Do not use deprecated Android APIs unless unavoidable. Keep dependencies compatible with compileSdk 36 and Java 17. The result MUST compile using ./gradlew assembleDebug on Ubuntu 24.04. Return ONLY valid JSON. Exact structure: {\\\"files\\\":[{\\\"path\\\":\\\"relative/path\\\",\\\"content\\\":\\\"complete file content\\\"}]}. Do not return Markdown. Do not use code fences. Do not omit compilation-required files. Do not include binary files."
+                    "text": "You are the lead Android engineer. Generate a complete compile-ready Android application project called MuslimCommunity. Package name MUST be com.muslimcommunity.app. Technology: Kotlin, Jetpack Compose, Material 3, Gradle Kotlin DSL, Java 17, compileSdk 36, targetSdk 36, minSdk 24, Android NDK with CMake and JNI C++. The project must compile on Ubuntu 24.04 GitHub Actions. Compose handles all UI. Kotlin handles Android logic, ViewModels, navigation and repositories. C++/NDK handles only a small safe native utility through JNI. Build a real Muslim Community application architecture with: onboarding, home dashboard, Quran, Hadith, prayer times architecture, Qibla architecture, Masjid finder architecture, community feed, community posts, quiz, profile, settings, notifications architecture, search, bookmarks/favorites, offline-safe state, loading states, error states, empty states, dark mode and light mode. Backend architecture must support Supabase REST, Supabase realtime, Supabase authentication and Supabase storage. Never hard-code secrets. Supabase URL and anon key must come from Gradle properties/environment variables/BuildConfig. Create all required project files including settings.gradle.kts, root build.gradle.kts, app/build.gradle.kts, gradle.properties, libs.versions.toml if needed, AndroidManifest.xml, Kotlin source, Compose screens, ViewModels, repository classes, models, resources, CMakeLists.txt, JNI C++ source, ProGuard/R8 configuration if required, README.md and Gradle wrapper configuration. Use stable compatible dependencies. Do not use Firebase. Do not use fake compile-breaking APIs. Do not leave TODO placeholders for required compilation. Do not include binary files. Return ONLY a JSON object with this exact structure: {\"files\":[{\"path\":\"relative/path/to/file\",\"content\":\"complete file content\"}]}. No Markdown. No code fences. All paths must be relative and safe. Include every file necessary to compile the project."
                   }
                 ]
               }
             ],
             "generationConfig": {
-              "temperature": 0.15,
-              "maxOutputTokens": 60000,
+              "temperature": 0.1,
+              "maxOutputTokens": 65536,
               "responseMimeType": "application/json"
             }
           }
           JSON
 
-          echo "Calling Gemini..."
+          echo "Calling Gemini model: ${GEMINI_MODEL}"
 
-          HTTP_CODE=$(curl \
-            -sS \
-            -o /tmp/gemini_response.json \
-            -w "%{http_code}" \
-            -X POST \
-            "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent" \
-            -H "x-goog-api-key: ${GEMINI_API_KEY}" \
-            -H "Content-Type: application/json" \
-            --data-binary @/tmp/request.json)
+          HTTP_CODE=$(
+            curl \
+              --silent \
+              --show-error \
+              --output /tmp/gemini_response.json \
+              --write-out "%{http_code}" \
+              --request POST \
+              "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent" \
+              --header "x-goog-api-key: ${GEMINI_API_KEY}" \
+              --header "Content-Type: application/json" \
+              --data-binary @/tmp/gemini_request.json
+          )
 
           echo "Gemini HTTP status: ${HTTP_CODE}"
 
           if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
             echo "::error::Gemini API request failed."
-
-            jq '.' /tmp/gemini_response.json || cat /tmp/gemini_response.json
-
+            jq '.' /tmp/gemini_response.json 2>/dev/null || cat /tmp/gemini_response.json
             exit 1
           fi
 
@@ -159,74 +182,102 @@ jobs:
           fi
 
           if jq -e '.error' /tmp/gemini_response.json >/dev/null 2>&1; then
-            echo "::error::Gemini API returned an error."
+            echo "::error::Gemini returned an API error."
             jq '.error' /tmp/gemini_response.json
             exit 1
           fi
 
-          RESPONSE_TEXT=$(jq -r '
-            [
-              .candidates[]?.content?.parts[]?.text?
-            ] | join("")
-          ' /tmp/gemini_response.json)
+          jq -e '.candidates[0].content.parts' \
+            /tmp/gemini_response.json >/dev/null
 
-          if [ -z "${RESPONSE_TEXT}" ] || [ "${RESPONSE_TEXT}" = "null" ]; then
-            echo "::error::Gemini returned no generated content."
-            jq '.' /tmp/gemini_response.json
+          jq -r '
+            [
+              .candidates[0].content.parts[]?.text?
+            ] | join("")
+          ' /tmp/gemini_response.json > /tmp/project.json
+
+          if [ ! -s /tmp/project.json ]; then
+            echo "::error::Gemini returned empty project."
             exit 1
           fi
 
-          printf '%s' "${RESPONSE_TEXT}" > /tmp/project.json
-
-          # Remove accidental Markdown fences if Gemini adds them.
+          # Remove accidental markdown fences.
           sed -i \
             -e 's/^```json[[:space:]]*$//' \
             -e 's/^```[[:space:]]*$//' \
             /tmp/project.json
 
-          # Validate project JSON.
-          if ! jq empty /tmp/project.json >/dev/null 2>&1; then
-            echo "::error::Generated project JSON is invalid."
-            head -c 5000 /tmp/project.json
-            exit 1
-          fi
+          # Extract the first JSON object if surrounding text exists.
+          python3 - <<'PY'
+          import json
 
-          if ! jq -e '
-            (.files | type == "array")
-          ' /tmp/project.json >/dev/null 2>&1; then
-            echo "::error::Gemini response does not contain files[] array."
-            jq '.' /tmp/project.json
-            exit 1
-          fi
+          path = "/tmp/project.json"
+
+          text = open(path, "r", encoding="utf-8").read().strip()
+
+          try:
+              obj = json.loads(text)
+          except Exception:
+              start = text.find("{")
+              end = text.rfind("}")
+
+              if start < 0 or end <= start:
+                  raise SystemExit("No JSON object found in Gemini response.")
+
+              obj = json.loads(text[start:end + 1])
+
+          if not isinstance(obj, dict):
+              raise SystemExit("Gemini response is not an object.")
+
+          if not isinstance(obj.get("files"), list):
+              raise SystemExit("Gemini response does not contain files[].")
+
+          with open(path, "w", encoding="utf-8") as f:
+              json.dump(obj, f, ensure_ascii=False)
+
+          print("Valid project JSON.")
+          print("Files:", len(obj["files"]))
+          PY
 
           FILE_COUNT=$(jq '.files | length' /tmp/project.json)
 
-          echo "Generated files: ${FILE_COUNT}"
-
           if [ "${FILE_COUNT}" -lt 10 ]; then
-            echo "::error::Gemini generated too few project files."
+            echo "::error::Gemini generated only ${FILE_COUNT} files."
             exit 1
           fi
 
-      # ----------------------------------------------------------
-      # WRITE GENERATED FILES
-      # ----------------------------------------------------------
+          echo "Gemini generated ${FILE_COUNT} files."
 
-      - name: Write generated Android project
-        if: ${{ inputs.replace_project == true }}
+      # ============================================================
+      # 7. CLEAN OLD PROJECT
+      # ============================================================
+
+      - name: Clean existing repository
+        if: ${{ inputs.clean_repo == true }}
         shell: bash
         run: |
-
           set -euo pipefail
 
-          echo "Removing previous project..."
+          echo "Cleaning existing project."
 
-          find . -mindepth 1 -maxdepth 1 \
+          # Keep .git and GitHub workflow files.
+          find . \
+            -mindepth 1 \
+            -maxdepth 1 \
             ! -name ".git" \
             ! -name ".github" \
             -exec rm -rf {} +
 
-          echo "Writing Gemini project..."
+          echo "Repository cleaned."
+
+      # ============================================================
+      # 8. WRITE GEMINI FILES
+      # ============================================================
+
+      - name: Write generated project files
+        shell: bash
+        run: |
+          set -euo pipefail
 
           jq -c '.files[]' /tmp/project.json |
           while IFS= read -r item; do
@@ -234,43 +285,43 @@ jobs:
             FILE_PATH=$(printf '%s' "$item" | jq -r '.path')
             FILE_CONTENT=$(printf '%s' "$item" | jq -r '.content')
 
-            if [ -z "$FILE_PATH" ] || [ "$FILE_PATH" = "null" ]; then
-              echo "Invalid file path."
+            if [ -z "${FILE_PATH}" ] || [ "${FILE_PATH}" = "null" ]; then
+              echo "::error::Invalid generated file path."
               exit 1
             fi
 
-            # Prevent absolute paths.
-            case "$FILE_PATH" in
+            # Reject absolute paths.
+            case "${FILE_PATH}" in
               /*)
-                echo "Rejected absolute path: $FILE_PATH"
+                echo "::error::Unsafe absolute path: ${FILE_PATH}"
                 exit 1
                 ;;
             esac
 
-            # Prevent directory traversal.
-            case "$FILE_PATH" in
-              ../*|*/../*|..)
-                echo "Rejected unsafe path: $FILE_PATH"
+            # Reject directory traversal.
+            case "${FILE_PATH}" in
+              ..|../*|*/../*)
+                echo "::error::Unsafe path: ${FILE_PATH}"
                 exit 1
                 ;;
             esac
 
-            mkdir -p "$(dirname "$FILE_PATH")"
+            mkdir -p "$(dirname "${FILE_PATH}")"
 
-            printf '%s' "$FILE_CONTENT" > "$FILE_PATH"
+            printf '%s' "${FILE_CONTENT}" > "${FILE_PATH}"
 
           done
 
           echo ""
-          echo "Project files:"
+          echo "Generated files:"
           find . \
             -not -path "./.git/*" \
             -type f \
             | sort
 
-      # ----------------------------------------------------------
-      # JAVA
-      # ----------------------------------------------------------
+      # ============================================================
+      # 9. JAVA 17
+      # ============================================================
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -279,16 +330,15 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      # ----------------------------------------------------------
-      # ANDROID SDK
-      # ----------------------------------------------------------
+      # ============================================================
+      # 10. ANDROID SDK
+      # ============================================================
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK and NDK
+      - name: Install Android SDK components
         run: |
-
           yes | sdkmanager --licenses >/dev/null || true
 
           sdkmanager \
@@ -298,40 +348,55 @@ jobs:
             "cmake;${CMAKE_VERSION}" \
             "ndk;${NDK_VERSION}"
 
-      # ----------------------------------------------------------
-      # LOCAL PROPERTIES
-      # ----------------------------------------------------------
+      # ============================================================
+      # 11. ANDROID LOCAL PROPERTIES
+      # ============================================================
 
-      - name: Configure Android environment
+      - name: Configure Android SDK
+        run: |
+          cat > local.properties <<EOF
+          sdk.dir=${ANDROID_HOME}
+          ndk.dir=${ANDROID_NDK_HOME}
+          EOF
+
+      # ============================================================
+      # 12. SUPABASE CONFIG
+      # ============================================================
+
+      - name: Prepare Supabase configuration
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         shell: bash
         run: |
 
-          cat > local.properties <<EOF
-          sdk.dir=${ANDROID_HOME}
-          ndk.dir=${ANDROID_NDK_HOME}
-          EOF
+          # These are intentionally NOT printed.
+          if [ -n "${SUPABASE_URL:-}" ]; then
+            echo "SUPABASE_URL configured."
+          else
+            echo "SUPABASE_URL is not configured."
+          fi
 
-          echo "Android SDK configured."
+          if [ -n "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "SUPABASE_ANON_KEY configured."
+          else
+            echo "SUPABASE_ANON_KEY is not configured."
+          fi
 
-      # ----------------------------------------------------------
-      # GRADLE WRAPPER
-      # ----------------------------------------------------------
+      # ============================================================
+      # 13. GRADLE WRAPPER
+      # ============================================================
 
-      - name: Prepare Gradle wrapper
+      - name: Prepare Gradle
         shell: bash
         run: |
 
           if [ ! -f "./gradlew" ]; then
 
-            echo "Gradle wrapper not found."
+            echo "Gradle wrapper not generated."
 
-            if ! command -v gradle >/dev/null 2>&1; then
-              sudo apt-get update
-              sudo apt-get install -y gradle
-            fi
+            sudo apt-get update
+            sudo apt-get install -y gradle
 
             gradle wrapper --gradle-version 8.13
 
@@ -341,176 +406,106 @@ jobs:
 
           ./gradlew --version
 
-      # ----------------------------------------------------------
-      # CHECK REQUIRED FILES
-      # ----------------------------------------------------------
+      # ============================================================
+      # 14. PROJECT STRUCTURE CHECK
+      # ============================================================
 
       - name: Check Android project
         shell: bash
         run: |
 
-          test -f settings.gradle.kts || test -f settings.gradle
+          if [ ! -f "settings.gradle.kts" ] && [ ! -f "settings.gradle" ]; then
+            echo "::error::settings.gradle.kts/settings.gradle missing."
+            exit 1
+          fi
 
-          test -f build.gradle.kts || test -f build.gradle
+          if [ ! -f "build.gradle.kts" ] && [ ! -f "build.gradle" ]; then
+            echo "::error::Root build.gradle missing."
+            exit 1
+          fi
 
-          test -d app
+          if [ ! -d "app" ]; then
+            echo "::error::app directory missing."
+            exit 1
+          fi
 
-          test -f app/build.gradle.kts || test -f app/build.gradle
+          if [ ! -f "app/build.gradle.kts" ] && [ ! -f "app/build.gradle" ]; then
+            echo "::error::app Gradle file missing."
+            exit 1
+          fi
 
-          test -f app/src/main/AndroidManifest.xml
+          if [ ! -f "app/src/main/AndroidManifest.xml" ]; then
+            echo "::error::AndroidManifest.xml missing."
+            exit 1
+          fi
 
-          echo "Android project structure looks valid."
+          echo "Android project structure OK."
 
-      # ----------------------------------------------------------
-      # SUPABASE BUILD CONFIG
-      # ----------------------------------------------------------
+      # ============================================================
+      # 15. GRADLE TASK VALIDATION
+      # ============================================================
 
-      - name: Configure Supabase build variables
+      - name: Validate Gradle
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        shell: bash
-        run: |
-
-          if [ -n "${SUPABASE_URL:-}" ]; then
-            echo "Supabase URL secret detected."
-          else
-            echo "Supabase URL secret not configured."
-          fi
-
-          if [ -n "${SUPABASE_ANON_KEY:-}" ]; then
-            echo "Supabase anon key secret detected."
-          else
-            echo "Supabase anon key secret not configured."
-          fi
-
-      # ----------------------------------------------------------
-      # GRADLE VALIDATION
-      # ----------------------------------------------------------
-
-      - name: Validate Gradle
         run: |
           ./gradlew \
             --no-daemon \
             --stacktrace \
             tasks
 
-      # ----------------------------------------------------------
-      # BUILD DEBUG APK
-      # ----------------------------------------------------------
+      # ============================================================
+      # 16. DEBUG BUILD
+      # ============================================================
 
       - name: Build Debug APK
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-
           ./gradlew \
             --no-daemon \
             --stacktrace \
             assembleDebug
 
-      # ----------------------------------------------------------
-      # BUILD RELEASE
-      # ----------------------------------------------------------
+      # ============================================================
+      # 17. RELEASE BUILD
+      # ============================================================
 
       - name: Build Release APK
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-
           ./gradlew \
             --no-daemon \
             --stacktrace \
             assembleRelease
 
-      # ----------------------------------------------------------
-      # BUILD AAB
-      # ----------------------------------------------------------
+      # ============================================================
+      # 18. RELEASE AAB
+      # ============================================================
 
       - name: Build Release AAB
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-
           ./gradlew \
             --no-daemon \
             --stacktrace \
             bundleRelease
 
-      # ----------------------------------------------------------
-      # COMMIT PROJECT
-      # ----------------------------------------------------------
+      # ============================================================
+      # 19. SHOW OUTPUT
+      # ============================================================
 
-      - name: Commit generated project
-        if: ${{ inputs.replace_project == true }}
-        shell: bash
-        run: |
-
-          git add -A
-
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-
-          git commit \
-            -m "Generate MuslimCommunity Android project"
-
-          git push origin "${GITHUB_REF_NAME}"
-
-      # ----------------------------------------------------------
-      # UPLOAD DEBUG APK
-      # ----------------------------------------------------------
-
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MuslimCommunity-debug-apk
-          path: |
-            app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 14
-
-      # ----------------------------------------------------------
-      # UPLOAD RELEASE APK
-      # ----------------------------------------------------------
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MuslimCommunity-release-apk
-          path: |
-            app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
-          retention-days: 14
-
-      # ----------------------------------------------------------
-      # UPLOAD AAB
-      # ----------------------------------------------------------
-
-      - name: Upload Release AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: MuslimCommunity-release-aab
-          path: |
-            app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-          retention-days: 14
-
-      # ----------------------------------------------------------
-      # BUILD SUMMARY
-      # ----------------------------------------------------------
-
-      - name: Build summary
+      - name: Show build outputs
         if: always()
-        shell: bash
         run: |
-
           echo "======================================"
-          echo " MUSLIM COMMUNITY BUILD"
+          echo "BUILD OUTPUTS"
           echo "======================================"
 
           find app/build/outputs \
@@ -518,4 +513,99 @@ jobs:
             \( -name "*.apk" -o -name "*.aab" \) \
             -print 2>/dev/null || true
 
-          echo "======================================"
+      # ============================================================
+      # 20. COMMIT + PUSH ONLY AFTER SUCCESSFUL BUILD
+      # ============================================================
+
+      - name: Push generated project to repository
+        if: ${{ success() && inputs.push_project == true }}
+        shell: bash
+        run: |
+
+          set -euo pipefail
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to push."
+            exit 0
+          fi
+
+          git commit \
+            -m "Generate Muslim Community Android app"
+
+          git push origin "${GITHUB_REF_NAME}"
+
+      # ============================================================
+      # 21. UPLOAD DEBUG APK
+      # ============================================================
+
+      - name: Upload Debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuslimCommunity-debug-apk
+          path: |
+            app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # ============================================================
+      # 22. UPLOAD RELEASE APK
+      # ============================================================
+
+      - name: Upload Release APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuslimCommunity-release-apk
+          path: |
+            app/build/outputs/apk/release/*.apk
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # ============================================================
+      # 23. UPLOAD AAB
+      # ============================================================
+
+      - name: Upload Release AAB
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuslimCommunity-release-aab
+          path: |
+            app/build/outputs/bundle/release/*.aab
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # ============================================================
+      # 24. SUMMARY
+      # ============================================================
+
+      - name: Build summary
+        if: always()
+        run: |
+
+          echo ""
+          echo "=============================================="
+          echo "       MUSLIM COMMUNITY BUILD SUMMARY"
+          echo "=============================================="
+          echo ""
+
+          if [ -d "app/build/outputs" ]; then
+            find app/build/outputs \
+              -type f \
+              \( -name "*.apk" -o -name "*.aab" \) \
+              -print
+          fi
+
+          echo ""
+          echo "Compose: ENABLED"
+          echo "Kotlin: ENABLED"
+          echo "NDK: ${NDK_VERSION}"
+          echo "CMake: ${CMAKE_VERSION}"
+          echo "Compile SDK: ${COMPILE_SDK}"
+          echo "Target SDK: ${TARGET_SDK}"
+          echo "Min SDK: ${MIN_SDK}"
+          echo ""
+          echo "=============================================="
