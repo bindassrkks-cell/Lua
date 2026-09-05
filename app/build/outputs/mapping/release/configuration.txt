@@ -99,13 +99,9 @@
 # End of content from /home/runner/work/Lua/Lua/app/build/intermediates/default_proguard_files/global/proguard-android-optimize.txt-8.7.2
 # The proguard configuration file for the following section is /home/runner/work/Lua/Lua/app/proguard-rules.pro
 -keepattributes *Annotation*
--keepattributes Signature
 -keepclassmembers class * {
     native <methods>;
 }
-# Keep dynamic loader classes and interfaces for reflection
--keep class com.muslimcommunity.app.dynamic.** { *; }
--keep interface com.muslimcommunity.app.dynamic.** { *; }
 -keep class com.muslimcommunity.app.NativeCore { *; }
 # End of content from /home/runner/work/Lua/Lua/app/proguard-rules.pro
 # The proguard configuration file for the following section is /home/runner/.gradle/caches/8.10.2/transforms/466e8b2fd58028662b451f2cfe11b4ed/transformed/ui-release/proguard.txt

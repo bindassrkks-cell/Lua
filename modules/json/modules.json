@@ -1,0 +1,23 @@
+{
+  "repository": "bindassrkks-cell/Lua",
+  "schema_version": "1.0.0",
+  "last_updated": "2026-09-05",
+  "modules": [
+    {
+      "id": "quran_core_dex",
+      "name": "Quran Tafseer & Tajweed Module",
+      "type": "dex",
+      "file": "quran_core.dex",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/quran_core.dex"
+    },
+    {
+      "id": "native_prayer_math",
+      "name": "High Precision Astro Native Lib",
+      "type": "so",
+      "file": "libnative_prayer.so",
+      "version": 1,
+      "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_prayer.so"
+    }
+  ]
+}

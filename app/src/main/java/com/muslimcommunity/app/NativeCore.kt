@@ -5,5 +5,5 @@ object NativeCore {
         System.loadLibrary("native-lib")
     }
     external fun getEngineInfo(): String
-    external fun loadDynamicNativeLib(libPath: String): Boolean
+    external fun loadNativeModule(path: String): Boolean
 }

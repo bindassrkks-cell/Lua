@@ -23,7 +23,6 @@ android {
         }
     }
 
-    // ABI splits produce isolated 2-3 MB APKs
     splits {
         abi {
             isEnable = true

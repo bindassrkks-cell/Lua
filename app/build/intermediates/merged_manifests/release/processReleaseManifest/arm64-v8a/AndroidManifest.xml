@@ -23,7 +23,8 @@
         android:extractNativeLibs="false"
         android:label="Muslim Community"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MuslimCommunity" >
+        android:theme="@style/Theme.MuslimCommunity"
+        android:usesCleartextTraffic="true" >
         <activity
             android:name="com.muslimcommunity.app.MainActivity"
             android:exported="true" >
