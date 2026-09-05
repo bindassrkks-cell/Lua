@@ -15,7 +15,7 @@ data class Ayah(val numberInSurah: Int, val text: String, val audioUrl: String)
 
 object QuranRepository {
     private var player: MediaPlayer? = null
-    var activeAudioUrl: String? = null
+    var playingAudioUrl: String? = null
 
     suspend fun getSurahs(): List<Surah> = withContext(Dispatchers.IO) {
         val list = mutableListOf<Surah>()
@@ -39,14 +39,15 @@ object QuranRepository {
                 Surah(36, "يس", "Ya-Sin", 83),
                 Surah(55, "الرَّحْمَٰن", "Ar-Rahman", 78),
                 Surah(67, "المُلْك", "Al-Mulk", 30),
-                Surah(112, "الإِخْلَاص", "Al-Ikhlas", 4)
+                Surah(112, "الإِخْلَاص", "Al-Ikhlas", 4),
+                Surah(114, "النَّاس", "An-Nas", 6)
             ))
         }
         list
     }
 
     suspend fun getSurahAyahs(surahNumber: Int): List<Ayah> = withContext(Dispatchers.IO) {
-        val result = mutableListOf<Ayah>()
+        val list = mutableListOf<Ayah>()
         try {
             val url = URL("https://api.alquran.cloud/v1/surah/$surahNumber/ar.alafasy")
             val conn = url.openConnection() as HttpURLConnection
@@ -54,45 +55,45 @@ object QuranRepository {
             conn.readTimeout = 8000
             if (conn.responseCode == 200) {
                 val json = JSONObject(BufferedReader(InputStreamReader(conn.inputStream)).readText())
-                val ayahsArray = json.getJSONObject("data").getJSONArray("ayahs")
-                for (i in 0 until ayahsArray.length()) {
-                    val a = ayahsArray.getJSONObject(i)
-                    result.add(Ayah(a.getInt("numberInSurah"), a.getString("text"), a.optString("audio", "")))
+                val ayahs = json.getJSONObject("data").getJSONArray("ayahs")
+                for (i in 0 until ayahs.length()) {
+                    val item = ayahs.getJSONObject(i)
+                    list.add(Ayah(item.getInt("numberInSurah"), item.getString("text"), item.optString("audio", "")))
                 }
             }
         } catch (e: Exception) {
-            result.add(Ayah(1, "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", ""))
-            result.add(Ayah(2, "الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ", ""))
+            list.add(Ayah(1, "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", ""))
+            list.add(Ayah(2, "الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ", ""))
         }
-        result
+        list
     }
 
-    fun playRecitation(url: String, onFinish: () -> Unit) {
+    fun playAudio(url: String, onFinished: () -> Unit) {
+        stopAudio()
+        if (url.isBlank()) return
         try {
-            stopRecitation()
-            if (url.isBlank()) return
             player = MediaPlayer().apply {
                 setAudioAttributes(AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).setUsage(AudioAttributes.USAGE_MEDIA).build())
                 setDataSource(url)
                 prepareAsync()
                 setOnPreparedListener {
-                    activeAudioUrl = url
+                    playingAudioUrl = url
                     start()
                 }
                 setOnCompletionListener {
-                    activeAudioUrl = null
-                    onFinish()
+                    playingAudioUrl = null
+                    onFinished()
                 }
             }
         } catch (e: Exception) {
-            activeAudioUrl = null
+            playingAudioUrl = null
         }
     }
 
-    fun stopRecitation() {
+    fun stopAudio() {
         player?.stop()
         player?.release()
         player = null
-        activeAudioUrl = null
+        playingAudioUrl = null
     }
 }

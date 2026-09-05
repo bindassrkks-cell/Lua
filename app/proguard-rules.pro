@@ -3,4 +3,4 @@
     native <methods>;
 }
 -keep class com.muslimcommunity.app.NativeCore { *; }
--keep class com.muslimcommunity.app.DynamicSyncManager { *; }
+-keep class com.muslimcommunity.app.WasmEngine { *; }

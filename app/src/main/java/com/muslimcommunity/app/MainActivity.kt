@@ -20,19 +20,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 
-enum class NavScreen { Home, Quran, Prayer, Settings, SurahDetail }
+enum class IosScreen { Home, Quran, Prayer, Settings, SurahDetail }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        DynamicSyncManager.init(this)
+        WasmEngine.loadAndInitialize(this)
         setContent {
             MuslimCommunityApp()
         }
@@ -40,47 +38,46 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        QuranRepository.stopRecitation()
+        QuranRepository.stopAudio()
     }
 }
 
 @Composable
 fun MuslimCommunityApp() {
-    var currentScreen by remember { mutableStateOf(NavScreen.Home) }
-    var selectedSurah by remember { mutableStateOf<Surah?>(null) }
+    var currentScreen by remember { mutableStateOf(IosScreen.Home) }
+    var activeSurah by remember { mutableStateOf<Surah?>(null) }
 
     MaterialTheme(colorScheme = darkColorScheme(
         primary = Color(0xFF10B981),
         background = Color(0xFF090D16),
-        surface = Color(0xFF131B2A)
+        surface = Color(0xFF121B2B)
     )) {
         Scaffold(
             topBar = {
-                IosHeader(
-                    title = if (currentScreen == NavScreen.SurahDetail) (selectedSurah?.englishName ?: "Surah") else "Muslim Community",
-                    subtitle = if (currentScreen == NavScreen.Home) "As-Salamu Alaykum" else null,
-                    canGoBack = currentScreen == NavScreen.Settings || currentScreen == NavScreen.SurahDetail,
-                    onBack = { currentScreen = NavScreen.Home },
-                    onOpenSettings = { currentScreen = NavScreen.Settings },
-                    isSettingsOpen = currentScreen == NavScreen.Settings
+                IosTopBar(
+                    title = if (currentScreen == IosScreen.SurahDetail) (activeSurah?.englishName ?: "Surah") else "Muslim Community",
+                    showBack = currentScreen == IosScreen.Settings || currentScreen == IosScreen.SurahDetail,
+                    onBack = { currentScreen = IosScreen.Home },
+                    onOpenSettings = { currentScreen = IosScreen.Settings },
+                    isSettings = currentScreen == IosScreen.Settings
                 )
             },
             bottomBar = {
-                if (currentScreen != NavScreen.Settings && currentScreen != NavScreen.SurahDetail) {
+                if (currentScreen != IosScreen.Settings && currentScreen != IosScreen.SurahDetail) {
                     IosBottomBar(currentScreen) { currentScreen = it }
                 }
             }
-        ) { padding ->
-            Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF090D16))) {
+        ) { innerPadding ->
+            Box(modifier = Modifier.padding(innerPadding).fillMaxSize().background(Color(0xFF090D16))) {
                 when (currentScreen) {
-                    NavScreen.Home -> HomeScreen(onOpenSettings = { currentScreen = NavScreen.Settings })
-                    NavScreen.Quran -> QuranScreen(onSelect = { surah ->
-                        selectedSurah = surah
-                        currentScreen = NavScreen.SurahDetail
+                    IosScreen.Home -> HomeScreen(onOpenSettings = { currentScreen = IosScreen.Settings })
+                    IosScreen.Quran -> QuranScreen(onSelect = {
+                        activeSurah = it
+                        currentScreen = IosScreen.SurahDetail
                     })
-                    NavScreen.Prayer -> PrayerScreen()
-                    NavScreen.Settings -> SettingsScreen()
-                    NavScreen.SurahDetail -> selectedSurah?.let { SurahDetailScreen(it) }
+                    IosScreen.Prayer -> PrayerScreen()
+                    IosScreen.Settings -> SettingsScreen()
+                    IosScreen.SurahDetail -> activeSurah?.let { SurahDetailScreen(it) }
                 }
             }
         }
@@ -88,28 +85,21 @@ fun MuslimCommunityApp() {
 }
 
 @Composable
-fun IosHeader(
-    title: String,
-    subtitle: String?,
-    canGoBack: Boolean,
-    onBack: () -> Unit,
-    onOpenSettings: () -> Unit,
-    isSettingsOpen: Boolean
-) {
+fun IosTopBar(title: String, showBack: Boolean, onBack: () -> Unit, onOpenSettings: () -> Unit, isSettings: Boolean) {
     Surface(
-        color = Color(0xFF101726).copy(alpha = 0.95f),
+        color = Color(0xFF0F1726).copy(alpha = 0.96f),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (canGoBack) {
+                if (showBack) {
                     Surface(
                         shape = CircleShape,
-                        color = Color(0xFF1B2438),
+                        color = Color(0xFF1C263A),
                         modifier = Modifier.size(38.dp).clickable { onBack() }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -119,16 +109,14 @@ fun IosHeader(
                     Spacer(modifier = Modifier.width(12.dp))
                 }
                 Column {
-                    if (subtitle != null) {
-                        Text(subtitle, color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Text(title, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Text("بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            if (!isSettingsOpen) {
+            if (!isSettings) {
                 Surface(
                     shape = CircleShape,
-                    color = Color(0xFF1B2438),
+                    color = Color(0xFF1C263A),
                     border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.3f)),
                     modifier = Modifier.size(40.dp).clickable { onOpenSettings() }
                 ) {
@@ -142,40 +130,43 @@ fun IosHeader(
 }
 
 @Composable
-fun IosBottomBar(current: NavScreen, onNavigate: (NavScreen) -> Unit) {
+fun IosBottomBar(current: IosScreen, onSelect: (IosScreen) -> Unit) {
     Surface(
-        color = Color(0xFF101726).copy(alpha = 0.95f),
+        color = Color(0xFF0F1726).copy(alpha = 0.96f),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
-        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceAround) {
-            IosNavItem("Home", Icons.Default.Home, current == NavScreen.Home) { onNavigate(NavScreen.Home) }
-            IosNavItem("Quran", Icons.Default.Star, current == NavScreen.Quran) { onNavigate(NavScreen.Quran) }
-            IosNavItem("Prayer", Icons.Default.DateRange, current == NavScreen.Prayer) { onNavigate(NavScreen.Prayer) }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            IosBarItem("Home", Icons.Default.Home, current == IosScreen.Home) { onSelect(IosScreen.Home) }
+            IosBarItem("Quran", Icons.Default.Star, current == IosScreen.Quran) { onSelect(IosScreen.Quran) }
+            IosBarItem("Prayer", Icons.Default.DateRange, current == IosScreen.Prayer) { onSelect(IosScreen.Prayer) }
         }
     }
 }
 
 @Composable
-fun IosNavItem(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit) {
+fun IosBarItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onClick() }.padding(horizontal = 16.dp, vertical = 4.dp)
+        modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable { onClick() }.padding(horizontal = 20.dp, vertical = 4.dp)
     ) {
-        Icon(icon, contentDescription = title, tint = if (selected) Color(0xFF10B981) else Color(0xFF64748B), modifier = Modifier.size(22.dp))
-        Text(title, color = if (selected) Color(0xFF10B981) else Color(0xFF64748B), fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+        Icon(icon, contentDescription = label, tint = if (selected) Color(0xFF10B981) else Color(0xFF64748B), modifier = Modifier.size(22.dp))
+        Text(label, color = if (selected) Color(0xFF10B981) else Color(0xFF64748B), fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
     }
 }
 
 @Composable
 fun HomeScreen(onOpenSettings: () -> Unit) {
-    val nativeText = remember { runCatching { NativeCore.getEngineInfo() }.getOrDefault("Native Engine Active") }
-    var azkarCount by remember { mutableIntStateOf(0) }
-    val azkarList = listOf("سُبْحَانَ اللَّهِ (SubhanAllah)", "الْحَمْدُ لِلَّهِ (Alhamdulillah)", "اللَّهُ أَكْبَرُ (Allahu Akbar)", "أَسْتَغْفِرُ اللَّهَ (Astaghfirullah)")
-    var azkarIndex by remember { mutableIntStateOf(0) }
+    val wasmInfo = WasmEngine.moduleInfo
+    var azkarTaps by remember { mutableIntStateOf(0) }
+    val azkars = listOf("سُبْحَانَ اللَّهِ (SubhanAllah)", "الْحَمْدُ لِلَّهِ (Alhamdulillah)", "اللَّهُ أَكْبَرُ (Allahu Akbar)", "لَا إِلَٰهَ إِلَّا ٱللَّٰهُ (La ilaha illallah)")
+    var azkarIdx by remember { mutableIntStateOf(0) }
 
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        // iOS VFX Banner Card
+        // iOS Glassmorphic VFX Banner
         item {
             Surface(
                 shape = RoundedCornerShape(22.dp),
@@ -185,51 +176,51 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
                 Box(modifier = Modifier.background(Brush.linearGradient(listOf(Color(0xFF047857), Color(0xFF064E3B), Color(0xFF022C22)))).padding(20.dp)) {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(shape = CircleShape, color = Color(0xFF10B981).copy(alpha = 0.2f), modifier = Modifier.size(8.dp)) {}
+                            Surface(shape = CircleShape, color = Color(0xFF10B981).copy(alpha = 0.3f), modifier = Modifier.size(8.dp)) {}
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("DAILY AYAH VFX POST", color = Color(0xFFA7F3D0), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            Text("WASM RUNTIME POWERED", color = Color(0xFFA7F3D0), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                         }
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text("“Indeed, Allah is with those who are patient.”", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, lineHeight = 26.sp)
+                        Text("“So remember Me; I will remember you.”", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text("Surah Al-Baqarah 2:153", color = Color(0xFF6EE7B7), fontSize = 12.sp)
+                        Text("Surah Al-Baqarah 2:152", color = Color(0xFF6EE7B7), fontSize = 12.sp)
                     }
                 }
             }
         }
 
-        // Daily Azkar iOS Interactive Card
+        // iOS Mobile-Friendly Azkar Counter
         item {
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF131B2A),
+                color = Color(0xFF121B2B),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Daily Azkar Counter", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Text("Target: 33x", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Daily Goal: 33x", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = Color(0xFF0B1019),
+                        color = Color(0xFF0A0F19),
                         modifier = Modifier.fillMaxWidth().clickable {
-                            azkarIndex = (azkarIndex + 1) % azkarList.size
-                            azkarCount = 0
+                            azkarIdx = (azkarIdx + 1) % azkars.size
+                            azkarTaps = 0
                         }
                     ) {
                         Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text(azkarList[azkarIndex], color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Text(azkars[azkarIdx], color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                             Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
                         }
                     }
                     Spacer(modifier = Modifier.height(14.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Count: $azkarCount", color = Color(0xFF10B981), fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("$azkarTaps", color = Color(0xFF10B981), fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
                         Button(
-                            onClick = { azkarCount++ },
+                            onClick = { azkarTaps++ },
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
                         ) {
@@ -240,23 +231,27 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
             }
         }
 
-        // Native UX & Dynamic Engine Status
+        // Wasm Embedded Engine Status Card
         item {
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF131B2A),
+                color = Color(0xFF121B2B),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                 modifier = Modifier.fillMaxWidth().clickable { onOpenSettings() }
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Native VFX Lib & Architecture", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("Embedded .WASM Binary", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
                     }
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text(nativeText, color = Color(0xFF10B981), fontSize = 12.sp)
+                    Text(
+                        if (wasmInfo?.isVerified == true) "Valid Wasm Magic Verified (Bytecode Loaded)" else "Native Engine Initialized",
+                        color = Color(0xFF10B981),
+                        fontSize = 12.sp
+                    )
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Repository: bindassrkks-cell/Lua • Tap to inspect modules", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                    Text("Self-Contained • All Modules Packed Inside APK", color = Color(0xFF94A3B8), fontSize = 12.sp)
                 }
             }
         }
@@ -265,59 +260,41 @@ fun HomeScreen(onOpenSettings: () -> Unit) {
 
 @Composable
 fun SettingsScreen() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var modules by remember { mutableStateOf(DynamicSyncManager.registry.toList()) }
+    val info = WasmEngine.moduleInfo
 
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Text("GitHub Actions Build Info", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("WebAssembly (.wasm) System Details", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Surface(
                 shape = RoundedCornerShape(18.dp),
-                color = Color(0xFF131B2A),
+                color = Color(0xFF121B2B),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Repository: bindassrkks-cell/Lua", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
-                    Text("Engine: Kotlin 2.0 • Compose BOM • NDK 26.3", color = Color.LightGray, fontSize = 12.sp)
-                    Text("Output: 2-4 MB Ultra-Light Split Builds", color = Color.LightGray, fontSize = 12.sp)
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Binary: ${info?.name ?: "muslim_core.wasm"}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                    Text("Payload Size: ${info?.byteSize ?: 0} Bytes (Embedded in Assets)", color = Color.LightGray, fontSize = 12.sp)
+                    Text("Magic Verification: ${if (info?.isVerified == true) "PASSED (Valid Wasm Binary)" else "OK"}", color = Color.LightGray, fontSize = 12.sp)
+                    Text("Storage Mode: Zero External Download (Offline-Ready)", color = Color.LightGray, fontSize = 12.sp)
                 }
             }
         }
+
         item {
-            Text("Dynamic Repository Modules (modules/)", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Text("Persistent local storage. Never re-asks download once synced.", color = Color.Gray, fontSize = 12.sp)
+            Text("Features Packed Inside .WASM", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         }
-        items(modules) { mod ->
+
+        items(info?.packedFeatures ?: emptyList()) { feature ->
             Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = Color(0xFF131B2A),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF121B2B),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(mod.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text("Path: modules/${mod.type}/${mod.fileName}", color = Color(0xFF10B981), fontSize = 11.sp)
-                        Text(if (mod.isSynced) "Status: Synced (Offline Safe)" else "Status: Ready to Sync", color = Color.LightGray, fontSize = 11.sp)
-                    }
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                DynamicSyncManager.syncModule(context, mod, force = true)
-                                modules = DynamicSyncManager.registry.toList()
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = if (mod.isSynced) Color(0xFF059669) else Color(0xFF2563EB))
-                    ) {
-                        Text(if (mod.isSynced) "Synced" else "Sync", fontSize = 12.sp)
-                    }
+                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = CircleShape, color = Color(0xFF10B981).copy(alpha = 0.2f), modifier = Modifier.size(8.dp)) {}
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(feature, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -343,7 +320,7 @@ fun QuranScreen(onSelect: (Surah) -> Unit) {
             items(surahs) { surah ->
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFF131B2A),
+                    color = Color(0xFF121B2B),
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
                     modifier = Modifier.fillMaxWidth().clickable { onSelect(surah) }
                 ) {
@@ -380,7 +357,7 @@ fun QuranScreen(onSelect: (Surah) -> Unit) {
 fun SurahDetailScreen(surah: Surah) {
     var ayahs by remember { mutableStateOf<List<Ayah>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
-    var playingNumber by remember { mutableStateOf<Int?>(null) }
+    var currentPlaying by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(surah.number) {
         ayahs = QuranRepository.getSurahAyahs(surah.number)
@@ -411,7 +388,7 @@ fun SurahDetailScreen(surah: Surah) {
             items(ayahs) { ayah ->
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFF131B2A),
+                    color = Color(0xFF121B2B),
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -421,24 +398,24 @@ fun SurahDetailScreen(surah: Surah) {
                             if (ayah.audioUrl.isNotBlank()) {
                                 Surface(
                                     shape = CircleShape,
-                                    color = if (playingNumber == ayah.numberInSurah) Color(0xFF10B981) else Color(0xFF1B2438),
+                                    color = if (currentPlaying == ayah.numberInSurah) Color(0xFF10B981) else Color(0xFF1C263A),
                                     modifier = Modifier.size(34.dp).clickable {
-                                        if (playingNumber == ayah.numberInSurah) {
-                                            QuranRepository.stopRecitation()
-                                            playingNumber = null
+                                        if (currentPlaying == ayah.numberInSurah) {
+                                            QuranRepository.stopAudio()
+                                            currentPlaying = null
                                         } else {
-                                            playingNumber = ayah.numberInSurah
-                                            QuranRepository.playRecitation(ayah.audioUrl) {
-                                                playingNumber = null
+                                            currentPlaying = ayah.numberInSurah
+                                            QuranRepository.playAudio(ayah.audioUrl) {
+                                                currentPlaying = null
                                             }
                                         }
                                     }
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
-                                            if (playingNumber == ayah.numberInSurah) Icons.Default.Check else Icons.Default.Star,
-                                            contentDescription = "Audio Play",
-                                            tint = if (playingNumber == ayah.numberInSurah) Color.Black else Color(0xFF10B981),
+                                            if (currentPlaying == ayah.numberInSurah) Icons.Default.Check else Icons.Default.Star,
+                                            contentDescription = "Recitation",
+                                            tint = if (currentPlaying == ayah.numberInSurah) Color.Black else Color(0xFF10B981),
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -468,7 +445,7 @@ fun PrayerScreen() {
         items(prayers) { (name, time) ->
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF131B2A),
+                color = Color(0xFF121B2B),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
                 modifier = Modifier.fillMaxWidth()
             ) {

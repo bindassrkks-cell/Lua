@@ -3121,6 +3121,7 @@ androidx.compose.foundation.layout.FlowLayoutData:
     public final androidx.compose.foundation.layout.FlowLayoutData copy(float)
     public static synthetic androidx.compose.foundation.layout.FlowLayoutData copy$default(androidx.compose.foundation.layout.FlowLayoutData,float,int,java.lang.Object)
     public boolean equals(java.lang.Object)
+    public int hashCode()
     public final void setFillCrossAxisFraction(float)
     public java.lang.String toString()
 androidx.compose.foundation.layout.FlowLayoutKt$FlowColumn$1
@@ -3206,14 +3207,8 @@ androidx.compose.foundation.layout.IntrinsicWidthElement
 androidx.compose.foundation.layout.IntrinsicWidthNode
 androidx.compose.foundation.layout.LayoutOrientation
 androidx.compose.foundation.layout.LayoutScopeMarker
-androidx.compose.foundation.layout.LayoutWeightElement:
-    public static final int $stable
-    public final boolean getFill()
-    public final float getWeight()
-    public void inspectableProperties(androidx.compose.ui.platform.InspectorInfo)
-androidx.compose.foundation.layout.LayoutWeightNode:
-    public final boolean getFill()
-    public final float getWeight()
+androidx.compose.foundation.layout.LayoutWeightElement
+androidx.compose.foundation.layout.LayoutWeightNode
 androidx.compose.foundation.layout.LimitInsets
 androidx.compose.foundation.layout.MutableWindowInsets
 androidx.compose.foundation.layout.OffsetElement
@@ -3278,15 +3273,28 @@ androidx.compose.foundation.layout.RowColumnImplKt:
     private static final int intrinsicMainAxisSize(java.util.List,kotlin.jvm.functions.Function2,int,int)
 androidx.compose.foundation.layout.RowColumnMeasurePolicy_jvmKt
 androidx.compose.foundation.layout.RowColumnParentData:
+    public static final int $stable
+    private androidx.compose.foundation.layout.CrossAxisAlignment crossAxisAlignment
+    private boolean fill
+    private androidx.compose.foundation.layout.FlowLayoutData flowLayoutData
+    private float weight
+    static void <clinit>()
     public void <init>()
+    public void <init>(float,boolean,androidx.compose.foundation.layout.CrossAxisAlignment,androidx.compose.foundation.layout.FlowLayoutData)
+    public synthetic void <init>(float,boolean,androidx.compose.foundation.layout.CrossAxisAlignment,androidx.compose.foundation.layout.FlowLayoutData,int,kotlin.jvm.internal.DefaultConstructorMarker)
     public final float component1()
     public final boolean component2()
     public final androidx.compose.foundation.layout.CrossAxisAlignment component3()
     public final androidx.compose.foundation.layout.FlowLayoutData component4()
     public final androidx.compose.foundation.layout.RowColumnParentData copy(float,boolean,androidx.compose.foundation.layout.CrossAxisAlignment,androidx.compose.foundation.layout.FlowLayoutData)
     public static synthetic androidx.compose.foundation.layout.RowColumnParentData copy$default(androidx.compose.foundation.layout.RowColumnParentData,float,boolean,androidx.compose.foundation.layout.CrossAxisAlignment,androidx.compose.foundation.layout.FlowLayoutData,int,java.lang.Object)
+    public boolean equals(java.lang.Object)
+    public int hashCode()
     public final void setCrossAxisAlignment(androidx.compose.foundation.layout.CrossAxisAlignment)
+    public final void setFill(boolean)
     public final void setFlowLayoutData(androidx.compose.foundation.layout.FlowLayoutData)
+    public final void setWeight(float)
+    public java.lang.String toString()
 androidx.compose.foundation.layout.RowKt:
     public static final void Row(androidx.compose.ui.Modifier,androidx.compose.foundation.layout.Arrangement$Horizontal,androidx.compose.ui.Alignment$Vertical,kotlin.jvm.functions.Function3,androidx.compose.runtime.Composer,int,int)
     public static final androidx.compose.ui.layout.MeasurePolicy getDefaultRowMeasurePolicy()
@@ -3307,12 +3315,15 @@ androidx.compose.foundation.layout.RowScope:
     public abstract androidx.compose.ui.Modifier alignBy(androidx.compose.ui.Modifier,androidx.compose.ui.layout.HorizontalAlignmentLine)
     public abstract androidx.compose.ui.Modifier alignBy(androidx.compose.ui.Modifier,kotlin.jvm.functions.Function1)
     public abstract androidx.compose.ui.Modifier alignByBaseline(androidx.compose.ui.Modifier)
+    public abstract androidx.compose.ui.Modifier weight(androidx.compose.ui.Modifier,float,boolean)
+    public static synthetic androidx.compose.ui.Modifier weight$default(androidx.compose.foundation.layout.RowScope,androidx.compose.ui.Modifier,float,boolean,int,java.lang.Object)
 androidx.compose.foundation.layout.RowScopeInstance:
     public static final int $stable
     public androidx.compose.ui.Modifier align(androidx.compose.ui.Modifier,androidx.compose.ui.Alignment$Vertical)
     public androidx.compose.ui.Modifier alignBy(androidx.compose.ui.Modifier,androidx.compose.ui.layout.HorizontalAlignmentLine)
     public androidx.compose.ui.Modifier alignBy(androidx.compose.ui.Modifier,kotlin.jvm.functions.Function1)
     public androidx.compose.ui.Modifier alignByBaseline(androidx.compose.ui.Modifier)
+    public androidx.compose.ui.Modifier weight(androidx.compose.ui.Modifier,float,boolean)
 androidx.compose.foundation.layout.SiblingsAlignedNode$WithAlignmentLineBlockNode
 androidx.compose.foundation.layout.SiblingsAlignedNode$WithAlignmentLineNode
 androidx.compose.foundation.layout.SiblingsAlignedNode
@@ -19065,27 +19076,17 @@ com.muslimcommunity.app.Ayah:
     public final com.muslimcommunity.app.Ayah copy(int,java.lang.String,java.lang.String)
     public static synthetic com.muslimcommunity.app.Ayah copy$default(com.muslimcommunity.app.Ayah,int,java.lang.String,java.lang.String,int,java.lang.Object)
 com.muslimcommunity.app.BuildConfig
-com.muslimcommunity.app.DynamicModule:
-    public final java.lang.String component1()
-    public final java.lang.String component2()
-    public final java.lang.String component3()
-    public final java.lang.String component4()
-    public final java.lang.String component5()
-    public final boolean component6()
-    public final com.muslimcommunity.app.DynamicModule copy(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,boolean)
-    public static synthetic com.muslimcommunity.app.DynamicModule copy$default(com.muslimcommunity.app.DynamicModule,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,boolean,int,java.lang.Object)
-    public final java.lang.String getRemoteUrl()
+com.muslimcommunity.app.IosScreen:
+    public static kotlin.enums.EnumEntries getEntries()
 com.muslimcommunity.app.MainActivity:
     public static final int $stable
-com.muslimcommunity.app.MainActivityKt$PrayerScreen$lambda$61$lambda$60$$inlined$items$default$2
-com.muslimcommunity.app.MainActivityKt$QuranScreen$lambda$42$lambda$41$$inlined$items$default$2
-com.muslimcommunity.app.MainActivityKt$SettingsScreen$lambda$29$lambda$28$$inlined$items$default$2
-com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$lambda$57$lambda$56$$inlined$items$default$2
-com.muslimcommunity.app.NavScreen:
-    public static kotlin.enums.EnumEntries getEntries()
+com.muslimcommunity.app.MainActivityKt$PrayerScreen$lambda$56$lambda$55$$inlined$items$default$2
+com.muslimcommunity.app.MainActivityKt$QuranScreen$lambda$37$lambda$36$$inlined$items$default$2
+com.muslimcommunity.app.MainActivityKt$SettingsScreen$lambda$24$lambda$23$$inlined$items$default$2
+com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$lambda$52$lambda$51$$inlined$items$default$2
 com.muslimcommunity.app.QuranRepository:
-    public final java.lang.String getActiveAudioUrl()
-    public final void setActiveAudioUrl(java.lang.String)
+    public final java.lang.String getPlayingAudioUrl()
+    public final void setPlayingAudioUrl(java.lang.String)
 com.muslimcommunity.app.R$style
 com.muslimcommunity.app.R
 com.muslimcommunity.app.Surah:
@@ -19096,6 +19097,13 @@ com.muslimcommunity.app.Surah:
     public final int component4()
     public final com.muslimcommunity.app.Surah copy(int,java.lang.String,java.lang.String,int)
     public static synthetic com.muslimcommunity.app.Surah copy$default(com.muslimcommunity.app.Surah,int,java.lang.String,java.lang.String,int,int,java.lang.Object)
+com.muslimcommunity.app.WasmModuleInfo:
+    public final java.lang.String component1()
+    public final int component2()
+    public final boolean component3()
+    public final java.util.List component4()
+    public final com.muslimcommunity.app.WasmModuleInfo copy(java.lang.String,int,boolean,java.util.List)
+    public static synthetic com.muslimcommunity.app.WasmModuleInfo copy$default(com.muslimcommunity.app.WasmModuleInfo,java.lang.String,int,boolean,java.util.List,int,java.lang.Object)
 kotlin.ArrayIntrinsicsKt
 kotlin.BuilderInference
 kotlin.CharCodeJVMKt
@@ -22232,7 +22240,26 @@ kotlin.internal.jdk8.JDK8PlatformImplementations:
     private final boolean sdkIsNullOrAtLeast(int)
 kotlin.io.AccessDeniedException
 kotlin.io.ByteStreamsKt$iterator$1
-kotlin.io.ByteStreamsKt
+kotlin.io.ByteStreamsKt:
+    private static final java.io.BufferedInputStream buffered(java.io.InputStream,int)
+    private static final java.io.BufferedOutputStream buffered(java.io.OutputStream,int)
+    static synthetic java.io.BufferedInputStream buffered$default(java.io.InputStream,int,int,java.lang.Object)
+    static synthetic java.io.BufferedOutputStream buffered$default(java.io.OutputStream,int,int,java.lang.Object)
+    private static final java.io.BufferedReader bufferedReader(java.io.InputStream,java.nio.charset.Charset)
+    static synthetic java.io.BufferedReader bufferedReader$default(java.io.InputStream,java.nio.charset.Charset,int,java.lang.Object)
+    private static final java.io.BufferedWriter bufferedWriter(java.io.OutputStream,java.nio.charset.Charset)
+    static synthetic java.io.BufferedWriter bufferedWriter$default(java.io.OutputStream,java.nio.charset.Charset,int,java.lang.Object)
+    private static final java.io.ByteArrayInputStream byteInputStream(java.lang.String,java.nio.charset.Charset)
+    static synthetic java.io.ByteArrayInputStream byteInputStream$default(java.lang.String,java.nio.charset.Charset,int,java.lang.Object)
+    private static final java.io.ByteArrayInputStream inputStream(byte[])
+    private static final java.io.ByteArrayInputStream inputStream(byte[],int,int)
+    public static final kotlin.collections.ByteIterator iterator(java.io.BufferedInputStream)
+    public static final byte[] readBytes(java.io.InputStream,int)
+    public static synthetic byte[] readBytes$default(java.io.InputStream,int,int,java.lang.Object)
+    private static final java.io.InputStreamReader reader(java.io.InputStream,java.nio.charset.Charset)
+    static synthetic java.io.InputStreamReader reader$default(java.io.InputStream,java.nio.charset.Charset,int,java.lang.Object)
+    private static final java.io.OutputStreamWriter writer(java.io.OutputStream,java.nio.charset.Charset)
+    static synthetic java.io.OutputStreamWriter writer$default(java.io.OutputStream,java.nio.charset.Charset,int,java.lang.Object)
 kotlin.io.CloseableKt:
     private static final java.lang.Object use(java.io.Closeable,kotlin.jvm.functions.Function1)
 kotlin.io.ConsoleKt
@@ -23547,13 +23574,7 @@ kotlin.text.CharsKt__CharKt:
     public static final boolean isSurrogate(char)
     private static final java.lang.String plus(char,java.lang.String)
     public static final java.lang.String titlecase(char)
-kotlin.text.Charsets:
-    private static volatile java.nio.charset.Charset utf_32
-    private static volatile java.nio.charset.Charset utf_32be
-    private static volatile java.nio.charset.Charset utf_32le
-    public final java.nio.charset.Charset UTF32()
-    public final java.nio.charset.Charset UTF32_BE()
-    public final java.nio.charset.Charset UTF32_LE()
+kotlin.text.Charsets
 kotlin.text.CharsetsKt
 kotlin.text.DelimitedRangesSequence$iterator$1:
     public final int getCounter()
@@ -27639,7 +27660,6 @@ androidx.compose.foundation.layout.ColumnMeasurePolicy$placeHelper$1$1:
     public final synthetic int $beforeCrossAxisAlignmentLine
     public final void invoke$13()
 androidx.compose.foundation.layout.ColumnMeasurePolicy:
-    public final androidx.compose.foundation.layout.Arrangement$Top$1 verticalArrangement
     static void <clinit>()
     public static int getCrossAxisPosition()
 androidx.compose.foundation.layout.ColumnScope
@@ -27690,21 +27710,11 @@ androidx.compose.foundation.layout.InsetsValues:
     public static int getLeft()
     public static int getRight()
     public static int getTop()
-androidx.compose.foundation.layout.LayoutWeightElement:
-    static void <clinit>()
-    public static androidx.compose.foundation.layout.LayoutWeightNode create()
-    public static void update$6()
-androidx.compose.foundation.layout.LayoutWeightNode:
-    public static final int $stable
-    static void <clinit>()
-    public static androidx.compose.foundation.layout.RowColumnParentData modifyParentData()
-    public static void setFill()
-    public static void setWeight()
 androidx.compose.foundation.layout.PaddingElement:
     public final kotlin.jvm.functions.Function1 inspectorInfo
     public boolean rtlAware
     public static androidx.compose.foundation.layout.PaddingNode create()
-    public static void update$7()
+    public static void update$6()
 androidx.compose.foundation.layout.PaddingKt$padding$2$$InternalSyntheticThrowCCEIfNotNull$18$e77628e9ac1b17ada35fcbc34ea214dee13e552c0e80b5eff2b12aea565f5ead$0
 androidx.compose.foundation.layout.PaddingKt$padding$2
 androidx.compose.foundation.layout.PaddingKt$padding$3$$InternalSyntheticThrowCCEIfNotNull$18$b157ae33e36509af91c4c956a6f8eeccd4516b01a6e3f2352c1ce6c44389472c$0
@@ -27730,7 +27740,7 @@ androidx.compose.foundation.layout.PaddingNode:
 androidx.compose.foundation.layout.PaddingValuesElement:
     public final kotlin.jvm.functions.Function1 inspectorInfo
     public static androidx.compose.foundation.layout.PaddingValuesModifier create()
-    public static void update$8()
+    public static void update$7()
 androidx.compose.foundation.layout.PaddingValuesImpl:
     static void <clinit>()
 androidx.compose.foundation.layout.PaddingValuesModifier$measure$2:
@@ -27738,32 +27748,20 @@ androidx.compose.foundation.layout.PaddingValuesModifier$measure$2:
 androidx.compose.foundation.layout.PaddingValuesModifier:
     public static androidx.compose.foundation.layout.PaddingValues getPaddingValues()
     public static void setPaddingValues()
+androidx.compose.foundation.layout.RowColumnImplKt$$InternalSyntheticThrowCCEIfNotNull$65$78196b63f007254e21f61397f421724ae6e7e7166d229d479586b0b96f3dbe89$0
+androidx.compose.foundation.layout.RowColumnImplKt$$InternalSyntheticThrowCCEIfNotNull$65$bca332bac8921fafa1e186d1d3e585cfeaa8662a273f3a0908ed45187fda2893$0
 androidx.compose.foundation.layout.RowColumnImplKt
-androidx.compose.foundation.layout.RowColumnParentData:
-    public static final int $stable
-    public androidx.compose.foundation.layout.CrossAxisAlignment crossAxisAlignment
-    public androidx.compose.foundation.layout.FlowLayoutData flowLayoutData
-    static void <clinit>()
-    public static void getCrossAxisAlignment()
-    public static boolean getFill()
-    public static void getFlowLayoutData()
-    public static float getWeight()
-    public static void setFill()
-    public static void setWeight()
+androidx.compose.foundation.layout.RowColumnParentData
 androidx.compose.foundation.layout.RowMeasurePolicy$placeHelper$1$1:
     public final synthetic int $beforeCrossAxisAlignmentLine
     public final void invoke$13()
 androidx.compose.foundation.layout.RowMeasurePolicy:
     static void <clinit>()
     public static int getCrossAxisPosition$1()
-androidx.compose.foundation.layout.RowScope:
-    public abstract androidx.compose.ui.Modifier weight()
-androidx.compose.foundation.layout.RowScopeInstance:
-    public final androidx.compose.ui.Modifier weight()
 androidx.compose.foundation.layout.SizeElement:
     public final kotlin.jvm.functions.Function1 inspectorInfo
     public static androidx.compose.foundation.layout.SizeNode create()
-    public static void update$9()
+    public static void update$8()
 androidx.compose.foundation.layout.SizeKt$height-3ABfNKs$$inlined$debugInspectorInfo$1$$InternalSyntheticThrowCCEIfNotNull$18$1e75c824a539d562893ff29cf5b62f5f5b14fe485472ec5c45149a25bf7940cb$0
 androidx.compose.foundation.layout.SizeKt$height-3ABfNKs$$inlined$debugInspectorInfo$1
 androidx.compose.foundation.layout.SizeKt$size-3ABfNKs$$inlined$debugInspectorInfo$1$$InternalSyntheticThrowCCEIfNotNull$18$12a7398f5081b80c46022293afd5ddf623a19e58cd04e8f5c4b208a3c1c09e4f$0
@@ -27793,7 +27791,7 @@ androidx.compose.foundation.layout.SpacerMeasurePolicy$measure$1$1:
     public final void invoke$13()
 androidx.compose.foundation.layout.UnspecifiedConstraintsElement:
     public static androidx.compose.foundation.layout.UnspecifiedConstraintsNode create()
-    public static void update$10()
+    public static void update$9()
 androidx.compose.foundation.layout.UnspecifiedConstraintsNode$measure$1:
     public final void invoke$13()
 androidx.compose.foundation.layout.UnspecifiedConstraintsNode:
@@ -28205,7 +28203,7 @@ androidx.compose.foundation.lazy.layout.LazyLayoutItemAnimation:
 androidx.compose.foundation.lazy.layout.LazyLayoutItemAnimationKt
 androidx.compose.foundation.lazy.layout.LazyLayoutItemAnimator$DisplayingDisappearingItemsElement:
     public static androidx.compose.foundation.lazy.layout.LazyLayoutItemAnimator$DisplayingDisappearingItemsNode create()
-    public static void update$12()
+    public static void update$11()
 androidx.compose.foundation.lazy.layout.LazyLayoutItemAnimator$DisplayingDisappearingItemsNode:
     public static void setAnimator()
 androidx.compose.foundation.lazy.layout.LazyLayoutItemAnimator$ItemInfo$updateAnimation$1$animation$1
@@ -28359,7 +28357,7 @@ androidx.compose.foundation.lazy.layout.LazyLayoutSemanticsKt:
     public static final float estimatedLazyScrollOffset(int,int)
 androidx.compose.foundation.lazy.layout.LazyLayoutSemanticsModifier:
     public static androidx.compose.foundation.lazy.layout.LazyLayoutSemanticsModifierNode create()
-    public static void update$13()
+    public static void update$12()
 androidx.compose.foundation.lazy.layout.LazyLayoutSemanticsModifierNode$applySemantics$2:
     public final java.lang.Float invoke()
 androidx.compose.foundation.lazy.layout.LazyLayoutSemanticsModifierNode$indexForKeyMapping$1:
@@ -28439,7 +28437,7 @@ androidx.compose.foundation.lazy.layout.PrefetchRequestScope
 androidx.compose.foundation.lazy.layout.StableValue
 androidx.compose.foundation.lazy.layout.TraversablePrefetchStateModifierElement:
     public static androidx.compose.foundation.lazy.layout.TraversablePrefetchStateNode create()
-    public static void update$14()
+    public static void update$13()
 androidx.compose.foundation.lazy.layout.TraversablePrefetchStateNode:
     public final java.lang.String traverseKey
     public static androidx.compose.foundation.lazy.layout.LazyLayoutPrefetchState getPrefetchState()
@@ -28571,7 +28569,7 @@ androidx.compose.foundation.text.modifiers.TextAnnotatedStringElement:
     public final androidx.compose.foundation.text.modifiers.SelectionController selectionController
     static void <clinit>()
     public static androidx.compose.foundation.text.modifiers.TextAnnotatedStringNode create()
-    public static void update$16()
+    public static void update$15()
 androidx.compose.foundation.text.modifiers.TextAnnotatedStringNode$TextSubstitutionValue:
     public static final int $stable
     static void <clinit>()
@@ -28612,7 +28610,7 @@ androidx.compose.foundation.text.modifiers.TextAnnotatedStringNodeKt
 androidx.compose.foundation.text.modifiers.TextStringSimpleElement:
     static void <clinit>()
     public static androidx.compose.foundation.text.modifiers.TextStringSimpleNode create()
-    public static void update$17()
+    public static void update$16()
 androidx.compose.foundation.text.modifiers.TextStringSimpleNode$TextSubstitutionValue:
     public static final int $stable
     static void <clinit>()
@@ -28835,6 +28833,7 @@ androidx.compose.material3.ButtonDefaults:
     public static final androidx.compose.foundation.layout.PaddingValues TextButtonWithIconContentPadding
     public static final float TextButtonWithIconHorizontalEndPadding
     public static androidx.compose.material3.ButtonColors buttonColors()
+    public static androidx.compose.material3.ButtonColors buttonColors-ro_MJ88()
     public static androidx.compose.material3.ButtonElevation buttonElevation-R_JCAzs()
     public static androidx.compose.foundation.layout.PaddingValues getContentPadding()
     public static float getMinHeight-D9Ej5fM()
@@ -28853,11 +28852,14 @@ androidx.compose.material3.ButtonElevation:
 androidx.compose.material3.ButtonKt$Button$1:
     public final void invoke$7()
 androidx.compose.material3.ButtonKt$Button$2$1:
+    public final synthetic androidx.compose.runtime.internal.ComposableLambdaImpl $content
     public final void invoke$4()
 androidx.compose.material3.ButtonKt$Button$2:
+    public final synthetic androidx.compose.runtime.internal.ComposableLambdaImpl $content
     public final void invoke$4()
 androidx.compose.material3.ButtonKt$Button$3:
     public final synthetic int $$default
+    public final synthetic androidx.compose.runtime.internal.ComposableLambdaImpl $content
     public final void invoke$4()
 androidx.compose.material3.ColorScheme:
     static void <clinit>()
@@ -28963,7 +28965,7 @@ androidx.compose.material3.MaterialThemeKt:
     public static final androidx.compose.runtime.ProvidableCompositionLocal LocalUsingExpressiveTheme
 androidx.compose.material3.MinimumInteractiveModifier:
     public static androidx.compose.material3.MinimumInteractiveModifierNode create()
-    public static void update$18()
+    public static void update$17()
 androidx.compose.material3.MinimumInteractiveModifierNode$measure$1:
     public final void invoke$13()
 androidx.compose.material3.MinimumInteractiveModifierNode:
@@ -31282,7 +31284,7 @@ androidx.compose.ui.draw.DrawBackgroundModifier:
     public static void setOnDraw()
 androidx.compose.ui.draw.DrawBehindElement:
     public static androidx.compose.ui.draw.DrawBackgroundModifier create()
-    public static void update$19()
+    public static void update$18()
 androidx.compose.ui.draw.DrawCacheModifier
 androidx.compose.ui.draw.DrawResult:
     public static final int $stable
@@ -31293,7 +31295,7 @@ androidx.compose.ui.draw.EmptyBuildDrawCacheParams:
     public static final long size
 androidx.compose.ui.draw.PainterElement:
     public static androidx.compose.ui.draw.PainterNode create()
-    public static void update$20()
+    public static void update$19()
 androidx.compose.ui.draw.PainterNode$measure$1:
     public final void invoke$13()
 androidx.compose.ui.draw.PainterNode:
@@ -31386,7 +31388,7 @@ androidx.compose.ui.focus.FocusOwnerImpl$modifier$1:
     public static void invoke$27()
 androidx.compose.ui.focus.FocusOwnerImpl$modifier$2:
     public static androidx.compose.ui.focus.FocusTargetNode create()
-    public static void update$21()
+    public static void update$20()
 androidx.compose.ui.focus.FocusOwnerImpl:
     public static final int $stable
     public final kotlin.jvm.functions.Function0 onFocusRectInterop
@@ -31424,7 +31426,7 @@ androidx.compose.ui.focus.FocusProperties:
     public abstract androidx.compose.ui.focus.FocusRequester getUp()
 androidx.compose.ui.focus.FocusPropertiesElement:
     public static androidx.compose.ui.focus.FocusPropertiesNode create()
-    public static void update$22()
+    public static void update$21()
 androidx.compose.ui.focus.FocusPropertiesImpl$enter$1:
     public final androidx.compose.ui.focus.FocusRequester invoke-3ESFkO8()
 androidx.compose.ui.focus.FocusPropertiesImpl$exit$1:
@@ -31784,7 +31786,7 @@ androidx.compose.ui.graphics.Float16Kt:
 androidx.compose.ui.graphics.GraphicsLayerElement:
     public final androidx.compose.ui.graphics.RenderEffect renderEffect
     public static androidx.compose.ui.graphics.SimpleGraphicsLayerModifier create()
-    public static void update$23()
+    public static void update$22()
 androidx.compose.ui.graphics.GraphicsLayerScope:
     public abstract float getCameraDistance()
     public abstract float getRotationX()
@@ -32972,7 +32974,7 @@ androidx.compose.ui.input.key.KeyEvent_androidKt:
 androidx.compose.ui.input.key.KeyInputElement:
     public final kotlin.jvm.functions.Function1 onPreKeyEvent
     public static androidx.compose.ui.input.key.KeyInputNode create()
-    public static void update$24()
+    public static void update$23()
 androidx.compose.ui.input.key.KeyInputNode:
     public kotlin.jvm.functions.Function1 onPreEvent
     public final void setOnEvent()
@@ -33193,7 +33195,7 @@ androidx.compose.ui.input.pointer.ProcessResult
 androidx.compose.ui.input.pointer.SuspendPointerInputElement:
     static void <clinit>()
     public static androidx.compose.ui.input.pointer.SuspendingPointerInputModifierNodeImpl create()
-    public static void update$26()
+    public static void update$25()
 androidx.compose.ui.input.pointer.SuspendingPointerInputFilterKt:
     public static final androidx.compose.ui.input.pointer.SuspendingPointerInputModifierNodeImpl SuspendingPointerInputModifierNode(kotlin.jvm.functions.Function2)
     public static final androidx.compose.ui.Modifier pointerInput(androidx.compose.ui.Modifier,kotlin.jvm.functions.Function2)
@@ -33273,7 +33275,7 @@ androidx.compose.ui.input.rotary.RotaryInputElement:
     public final kotlin.jvm.functions.Function1 onPreRotaryScrollEvent
     public final androidx.compose.ui.platform.AndroidComposeView$rotaryInputModifier$1 onRotaryScrollEvent
     public static androidx.compose.ui.input.rotary.RotaryInputNode create()
-    public static void update$27()
+    public static void update$26()
 androidx.compose.ui.input.rotary.RotaryInputModifierNode:
     public abstract boolean onPreRotaryScrollEvent(androidx.compose.ui.input.rotary.RotaryScrollEvent)
     public abstract boolean onRotaryScrollEvent(androidx.compose.ui.input.rotary.RotaryScrollEvent)
@@ -33361,7 +33363,7 @@ androidx.compose.ui.layout.LayoutCoordinates:
 androidx.compose.ui.layout.LayoutElement:
     public final androidx.compose.material3.ProgressIndicatorKt$IncreaseSemanticsBounds$1 measure
     public static androidx.compose.ui.layout.LayoutModifierImpl create()
-    public static void update$28()
+    public static void update$27()
 androidx.compose.ui.layout.LayoutInfo
 androidx.compose.ui.layout.LayoutModifier:
     public abstract androidx.compose.ui.layout.MeasureResult measure-3p2s80s()
@@ -33564,6 +33566,7 @@ androidx.compose.ui.node.BackwardsCompatNode:
     static void <clinit>()
     public static androidx.compose.ui.Modifier$Element getElement()
     public static java.util.HashSet getReadValues()
+    public final java.lang.Object modifyParentData()
     public static void onDrawCacheReadsChanged$ui_release()
     public static void setElement()
     public static void updateDrawCache()
@@ -33835,6 +33838,8 @@ androidx.compose.ui.node.LayoutNodeLayoutDelegate$LookaheadPassDelegate:
     public boolean isPlacedUnderMotionFrameOfReference
     public androidx.compose.ui.graphics.layer.GraphicsLayer lastExplicitLayer
     public float lastZIndex
+    public java.lang.Object parentData
+    public boolean parentDataDirty
     public final java.util.HashMap calculateAlignmentLines()
     public static void checkChildrenPlaceOrderForUpdates()
     public static void clearPlaceOrder()
@@ -33868,6 +33873,8 @@ androidx.compose.ui.node.LayoutNodeLayoutDelegate$MeasurePassDelegate:
     public boolean duringAlignmentLinesQuery
     public boolean isPlacedUnderMotionFrameOfReference
     public androidx.compose.ui.graphics.layer.GraphicsLayer lastExplicitLayer
+    public java.lang.Object parentData
+    public boolean parentDataDirty
     public androidx.compose.ui.graphics.layer.GraphicsLayer placeOuterCoordinatorLayer
     public final java.util.HashMap calculateAlignmentLines()
     public static void checkChildrenPlaceOrderForUpdates$1()
@@ -34212,6 +34219,8 @@ androidx.compose.ui.node.OwnerSnapshotObserver:
     public static void observeSemanticsReads$ui_release()
     public static void startObserving$ui_release()
     public static void stopObserving$ui_release()
+androidx.compose.ui.node.ParentDataModifierNode:
+    public abstract java.lang.Object modifyParentData()
 androidx.compose.ui.node.ParentDataModifierNodeKt
 androidx.compose.ui.node.PlaceableResult:
     public static androidx.compose.ui.node.LookaheadCapablePlaceable getPlaceable()
@@ -34615,7 +34624,7 @@ androidx.compose.ui.platform.DisposableSaveableStateRegistry_androidKt$Disposabl
     public final java.lang.Boolean invoke$5()
 androidx.compose.ui.platform.DragAndDropModifierOnDragListener$modifier$1:
     public static androidx.compose.ui.draganddrop.DragAndDropNode create()
-    public static void update$29()
+    public static void update$28()
 androidx.compose.ui.platform.DragAndDropModifierOnDragListener$rootDragAndDropNode$1
 androidx.compose.ui.platform.DragAndDropModifierOnDragListener:
     public final kotlin.jvm.functions.Function3 startDrag
@@ -34906,7 +34915,7 @@ androidx.compose.ui.semantics.AppendedSemanticsElement:
     static void <clinit>()
     public static androidx.compose.ui.semantics.CoreSemanticsModifierNode create()
     public final androidx.compose.ui.semantics.SemanticsConfiguration getSemanticsConfiguration()
-    public static void update$30()
+    public static void update$29()
 androidx.compose.ui.semantics.CollectionInfo:
     static void <clinit>()
     public static int getColumnCount()
@@ -34922,7 +34931,7 @@ androidx.compose.ui.semantics.CustomAccessibilityAction
 androidx.compose.ui.semantics.EmptySemanticsElement:
     static void <clinit>()
     public static androidx.compose.ui.semantics.EmptySemanticsModifier create()
-    public static void update$31()
+    public static void update$30()
 androidx.compose.ui.semantics.EmptySemanticsModifier:
     static void <clinit>()
 androidx.compose.ui.semantics.LiveRegionMode$Companion
@@ -37433,8 +37442,6 @@ com.muslimcommunity.app.Ayah:
     public static java.lang.String getText()
 com.muslimcommunity.app.ComposableSingletons$MainActivityKt$lambda-1$1:
     public final void invoke$4()
-com.muslimcommunity.app.ComposableSingletons$MainActivityKt$lambda-10$1:
-    public final void invoke$60()
 com.muslimcommunity.app.ComposableSingletons$MainActivityKt$lambda-2$1:
     public final void invoke$4()
 com.muslimcommunity.app.ComposableSingletons$MainActivityKt$lambda-3$1:
@@ -37446,35 +37453,24 @@ com.muslimcommunity.app.ComposableSingletons$MainActivityKt$lambda-5$1:
 com.muslimcommunity.app.ComposableSingletons$MainActivityKt$lambda-6$1:
     public final void invoke$60()
 com.muslimcommunity.app.ComposableSingletons$MainActivityKt$lambda-7$1:
-    public final void invoke$61()
+    public static void invoke$61()
 com.muslimcommunity.app.ComposableSingletons$MainActivityKt$lambda-8$1:
-    public final void invoke$4()
-com.muslimcommunity.app.ComposableSingletons$MainActivityKt$lambda-9$1:
     public final void invoke$60()
+com.muslimcommunity.app.ComposableSingletons$MainActivityKt$lambda-9$1:
+    public final void invoke$4()
 com.muslimcommunity.app.ComposableSingletons$MainActivityKt:
     public static final com.muslimcommunity.app.ComposableSingletons$MainActivityKt INSTANCE
     public static kotlin.jvm.functions.Function2 getLambda-1$app_release()
-    public static kotlin.jvm.functions.Function3 getLambda-10$app_release()
     public static kotlin.jvm.functions.Function2 getLambda-2$app_release()
     public static kotlin.jvm.functions.Function2 getLambda-3$app_release()
     public static kotlin.jvm.functions.Function2 getLambda-4$app_release()
     public static kotlin.jvm.functions.Function2 getLambda-5$app_release()
     public static kotlin.jvm.functions.Function3 getLambda-6$app_release()
     public static kotlin.jvm.functions.Function3 getLambda-7$app_release()
-    public static kotlin.jvm.functions.Function2 getLambda-8$app_release()
-    public static kotlin.jvm.functions.Function3 getLambda-9$app_release()
-com.muslimcommunity.app.DynamicModule:
-    public static final int $stable
-    static void <clinit>()
-    public static java.lang.String getFileName()
-    public static java.lang.String getId()
-    public static java.lang.String getName()
-    public static java.lang.String getType()
-    public static boolean isSynced()
-    public static void setSynced()
-com.muslimcommunity.app.DynamicSyncManager$syncModule$2:
-    public int label
-    public final java.lang.Object invoke$4()
+    public static kotlin.jvm.functions.Function3 getLambda-8$app_release()
+    public static kotlin.jvm.functions.Function2 getLambda-9$app_release()
+com.muslimcommunity.app.IosScreen:
+    public static final synthetic kotlin.enums.EnumEntries $ENTRIES
 com.muslimcommunity.app.MainActivity:
     static void <clinit>()
 com.muslimcommunity.app.MainActivityKt$HomeScreen$1$1$1$1$1$3:
@@ -37489,7 +37485,7 @@ com.muslimcommunity.app.MainActivityKt$HomeScreen$1$1$2:
     public final void invoke$60()
 com.muslimcommunity.app.MainActivityKt$IosBottomBar$1:
     public final void invoke$4()
-com.muslimcommunity.app.MainActivityKt$IosHeader$1:
+com.muslimcommunity.app.MainActivityKt$IosTopBar$1:
     public final void invoke$4()
 com.muslimcommunity.app.MainActivityKt$MuslimCommunityApp$1$1:
     public final void invoke$4()
@@ -37502,11 +37498,11 @@ com.muslimcommunity.app.MainActivityKt$MuslimCommunityApp$1:
     public final void invoke$4()
 com.muslimcommunity.app.MainActivityKt$PrayerScreen$1$1$1$1:
     public final void invoke$4()
-com.muslimcommunity.app.MainActivityKt$PrayerScreen$lambda$61$lambda$60$$inlined$items$default$1
-com.muslimcommunity.app.MainActivityKt$PrayerScreen$lambda$61$lambda$60$$inlined$items$default$3:
-    public final synthetic com.muslimcommunity.app.MainActivityKt$PrayerScreen$lambda$61$lambda$60$$inlined$items$default$1 $contentType
+com.muslimcommunity.app.MainActivityKt$PrayerScreen$lambda$56$lambda$55$$inlined$items$default$1
+com.muslimcommunity.app.MainActivityKt$PrayerScreen$lambda$56$lambda$55$$inlined$items$default$3:
+    public final synthetic com.muslimcommunity.app.MainActivityKt$PrayerScreen$lambda$56$lambda$55$$inlined$items$default$1 $contentType
     public final java.lang.Object invoke$12()
-com.muslimcommunity.app.MainActivityKt$PrayerScreen$lambda$61$lambda$60$$inlined$items$default$4:
+com.muslimcommunity.app.MainActivityKt$PrayerScreen$lambda$56$lambda$55$$inlined$items$default$4:
     public final void invoke$14()
 com.muslimcommunity.app.MainActivityKt$QuranScreen$1$1:
     public final java.lang.Object invoke$4()
@@ -37516,25 +37512,23 @@ com.muslimcommunity.app.MainActivityKt$QuranScreen$3$1$1$2$1$1$1:
     public final void invoke$4()
 com.muslimcommunity.app.MainActivityKt$QuranScreen$3$1$1$2:
     public final void invoke$4()
-com.muslimcommunity.app.MainActivityKt$QuranScreen$lambda$42$lambda$41$$inlined$items$default$1
-com.muslimcommunity.app.MainActivityKt$QuranScreen$lambda$42$lambda$41$$inlined$items$default$3:
-    public final synthetic com.muslimcommunity.app.MainActivityKt$QuranScreen$lambda$42$lambda$41$$inlined$items$default$1 $contentType
+com.muslimcommunity.app.MainActivityKt$QuranScreen$lambda$37$lambda$36$$inlined$items$default$1
+com.muslimcommunity.app.MainActivityKt$QuranScreen$lambda$37$lambda$36$$inlined$items$default$3:
+    public final synthetic com.muslimcommunity.app.MainActivityKt$QuranScreen$lambda$37$lambda$36$$inlined$items$default$1 $contentType
     public final java.lang.Object invoke$12()
-com.muslimcommunity.app.MainActivityKt$QuranScreen$lambda$42$lambda$41$$inlined$items$default$4:
+com.muslimcommunity.app.MainActivityKt$QuranScreen$lambda$37$lambda$36$$inlined$items$default$4:
     public final void invoke$14()
-com.muslimcommunity.app.MainActivityKt$SettingsScreen$1$1$1$1$1$2$1$1:
-    public final java.lang.Object invoke$4()
-com.muslimcommunity.app.MainActivityKt$SettingsScreen$1$1$1$1$1$2$1:
-    public final void invoke()
-com.muslimcommunity.app.MainActivityKt$SettingsScreen$1$1$1$1$1$3:
-    public final void invoke$61()
 com.muslimcommunity.app.MainActivityKt$SettingsScreen$1$1$1$1:
     public final void invoke$4()
-com.muslimcommunity.app.MainActivityKt$SettingsScreen$lambda$29$lambda$28$$inlined$items$default$1
-com.muslimcommunity.app.MainActivityKt$SettingsScreen$lambda$29$lambda$28$$inlined$items$default$3:
-    public final synthetic com.muslimcommunity.app.MainActivityKt$SettingsScreen$lambda$29$lambda$28$$inlined$items$default$1 $contentType
+com.muslimcommunity.app.MainActivityKt$SettingsScreen$1$1$1:
+    public final void invoke$60()
+com.muslimcommunity.app.MainActivityKt$SettingsScreen$1$1$2$1:
+    public final void invoke$4()
+com.muslimcommunity.app.MainActivityKt$SettingsScreen$lambda$24$lambda$23$$inlined$items$default$1
+com.muslimcommunity.app.MainActivityKt$SettingsScreen$lambda$24$lambda$23$$inlined$items$default$3:
+    public final synthetic com.muslimcommunity.app.MainActivityKt$SettingsScreen$lambda$24$lambda$23$$inlined$items$default$1 $contentType
     public final java.lang.Object invoke$12()
-com.muslimcommunity.app.MainActivityKt$SettingsScreen$lambda$29$lambda$28$$inlined$items$default$4:
+com.muslimcommunity.app.MainActivityKt$SettingsScreen$lambda$24$lambda$23$$inlined$items$default$4:
     public final void invoke$14()
 com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$1$1:
     public final java.lang.Object invoke$4()
@@ -37550,17 +37544,15 @@ com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$3$1$2$1$1$1$2:
     public final void invoke$4()
 com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$3$1$2$1:
     public final void invoke$4()
-com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$lambda$57$lambda$56$$inlined$items$default$1
-com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$lambda$57$lambda$56$$inlined$items$default$3:
-    public final synthetic com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$lambda$57$lambda$56$$inlined$items$default$1 $contentType
+com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$lambda$52$lambda$51$$inlined$items$default$1
+com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$lambda$52$lambda$51$$inlined$items$default$3:
+    public final synthetic com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$lambda$52$lambda$51$$inlined$items$default$1 $contentType
     public final java.lang.Object invoke$12()
-com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$lambda$57$lambda$56$$inlined$items$default$4:
+com.muslimcommunity.app.MainActivityKt$SurahDetailScreen$lambda$52$lambda$51$$inlined$items$default$4:
     public final void invoke$14()
 com.muslimcommunity.app.MainActivityKt:
-    public static final void access$HomeScreen$lambda$17(androidx.compose.runtime.MutableIntState,int)
-com.muslimcommunity.app.NavScreen:
-    public static final synthetic kotlin.enums.EnumEntries $ENTRIES
-com.muslimcommunity.app.QuranRepository$$InternalSyntheticLambda$5$6f92926ad60c57f485ffed7c3ed97e72e223d3fb3fcaf63108c322d3b10ad174$0:
+    public static final void access$HomeScreen$lambda$15(androidx.compose.runtime.MutableIntState,int)
+com.muslimcommunity.app.QuranRepository$$InternalSyntheticLambda$5$d8dfd811aca4dd9e13156b3e7ad6503c4a1eafe110d615d6c359d08bb7a37a78$0:
     public final synthetic java.lang.String f$0
 com.muslimcommunity.app.QuranRepository$getSurahAyahs$2:
     public int label
@@ -37571,18 +37563,26 @@ com.muslimcommunity.app.QuranRepository$getSurahs$2:
 com.muslimcommunity.app.QuranRepository:
     public static final int $stable
     public static final com.muslimcommunity.app.QuranRepository INSTANCE
-    public static java.lang.String activeAudioUrl
+    public static java.lang.String playingAudioUrl
     static void <clinit>()
     public static java.lang.Object getSurahAyahs()
     public static java.lang.Object getSurahs()
-    public static void playRecitation()
-    public static void stopRecitation()
+    public static void playAudio()
+    public static void stopAudio()
 com.muslimcommunity.app.Surah:
     static void <clinit>()
     public static java.lang.String getEnglishName()
     public static java.lang.String getName()
     public static int getNumber()
     public static int getVerses()
+com.muslimcommunity.app.WasmModuleInfo:
+    public static final int $stable
+    public final java.lang.String name
+    static void <clinit>()
+    public static int getByteSize()
+    public static java.lang.String getName()
+    public static java.util.List getPackedFeatures()
+    public static boolean isVerified()
 kotlin.DeprecationLevel:
     public static final synthetic kotlin.enums.EnumEntries $ENTRIES
     public static final enum kotlin.DeprecationLevel ERROR
@@ -37796,6 +37796,8 @@ kotlin.internal.jdk7.JDK7PlatformImplementations$ReflectSdkVersion:
     public static final kotlin.internal.jdk7.JDK7PlatformImplementations$ReflectSdkVersion INSTANCE
 kotlin.internal.jdk7.JDK7PlatformImplementations
 kotlin.internal.jdk8.JDK8PlatformImplementations
+kotlin.io.ByteStreamsKt
+kotlin.io.CloseableKt
 kotlin.jvm.functions.Function10
 kotlin.jvm.functions.Function11
 kotlin.jvm.functions.Function13
@@ -37886,7 +37888,6 @@ kotlin.ranges.IntRange:
     public static java.lang.Integer getStart()
 kotlin.ranges.RangesKt:
     public static float coerceAtLeast(float,float)
-    public static long coerceAtLeast(long)
     public static float coerceAtMost(float,float)
     public static long coerceAtMost(long,long)
 kotlin.ranges.RangesKt___RangesKt
@@ -37918,13 +37919,6 @@ kotlin.sequences.SequencesKt___SequencesKt$filterNotNull$1:
 kotlin.sequences.SequencesKt___SequencesKt
 kotlin.text.CharsKt
 kotlin.text.CharsKt__CharKt
-kotlin.text.Charsets:
-    public static final kotlin.text.Charsets INSTANCE
-    public static final java.nio.charset.Charset ISO_8859_1
-    public static final java.nio.charset.Charset US_ASCII
-    public static final java.nio.charset.Charset UTF_16
-    public static final java.nio.charset.Charset UTF_16BE
-    public static final java.nio.charset.Charset UTF_16LE
 kotlin.text.DelimitedRangesSequence$iterator$1:
     public static kotlin.ranges.IntRange next()
 kotlin.text.StringsKt

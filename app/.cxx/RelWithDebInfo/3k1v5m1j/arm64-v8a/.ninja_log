@@ -1,3 +1,3 @@
 # ninja log v5
-0	380	1788585792641216838	CMakeFiles/native-lib.dir/native-lib.cpp.o	b79c81fa991ec25d
-381	408	1788585792672217197	/home/runner/work/Lua/Lua/app/build/intermediates/cxx/RelWithDebInfo/3k1v5m1j/obj/arm64-v8a/libnative-lib.so	7bf4f5547357bfb9
+1	556	1788586535760269865	CMakeFiles/native-lib.dir/native-lib.cpp.o	b79c81fa991ec25d
+557	601	1788586535809270388	/home/runner/work/Lua/Lua/app/build/intermediates/cxx/RelWithDebInfo/3k1v5m1j/obj/arm64-v8a/libnative-lib.so	d3b724f64ceddf7a

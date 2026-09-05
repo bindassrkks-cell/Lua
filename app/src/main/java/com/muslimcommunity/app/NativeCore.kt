@@ -4,7 +4,6 @@ object NativeCore {
     init {
         System.loadLibrary("native-lib")
     }
-    external fun getEngineInfo(): String
-    external fun getVfxGlowIntensity(timeMillis: Long): Float
-    external fun loadDynamicNativeLib(path: String): Boolean
+    external fun verifyWasmBinary(bytes: ByteArray): Boolean
+    external fun getEngineStatus(): String
 }

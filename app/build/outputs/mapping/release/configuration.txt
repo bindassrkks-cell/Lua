@@ -103,7 +103,7 @@
     native <methods>;
 }
 -keep class com.muslimcommunity.app.NativeCore { *; }
--keep class com.muslimcommunity.app.DynamicSyncManager { *; }
+-keep class com.muslimcommunity.app.WasmEngine { *; }
 # End of content from /home/runner/work/Lua/Lua/app/proguard-rules.pro
 # The proguard configuration file for the following section is /home/runner/.gradle/caches/8.10.2/transforms/466e8b2fd58028662b451f2cfe11b4ed/transformed/ui-release/proguard.txt
 # Copyright (C) 2020 The Android Open Source Project
