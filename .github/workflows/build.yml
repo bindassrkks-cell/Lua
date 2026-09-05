@@ -141,7 +141,7 @@ jobs:
           }
           EOF
 
-          # All 16 C & C++ modules requested
+          # All 16 C & C++ modules
           cat << 'EOF' > app/src/main/cpp/Social.cpp
           #include <string>
           namespace SocialNative {
@@ -175,7 +175,9 @@ jobs:
           void memory_c_free(void* ptr) { free(ptr); }
           EOF
 
+          # FIXED: Included <stddef.h> for NULL definition
           cat << 'EOF' > app/src/main/cpp/Data.c
+          #include <stddef.h>
           int data_c_validate(const char* buf) { return buf != NULL ? 1 : 0; }
           EOF
 
@@ -1054,6 +1056,8 @@ jobs:
           import androidx.compose.foundation.shape.CircleShape
           import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.filled.MenuBook
+          import androidx.compose.material.icons.automirrored.filled.VolumeUp
           import androidx.compose.material.icons.filled.*
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
@@ -1181,7 +1185,7 @@ jobs:
                                   }
                                   Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
                                       Box(modifier = Modifier.size(38.dp).clip(CircleShape).background(EmeraldPrimary.copy(alpha = 0.2f)).border(1.dp, EmeraldPrimary, CircleShape), contentAlignment = Alignment.Center) {
-                                          Icon(Icons.Default.MenuBook, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(20.dp))
+                                          Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(20.dp))
                                       }
                                       Spacer(modifier = Modifier.width(12.dp))
                                       Column(modifier = Modifier.weight(1f)) {
@@ -1229,7 +1233,7 @@ jobs:
                                       },
                                       modifier = Modifier.clip(CircleShape).background(if (isPlayingAudio) EmeraldPrimary else DarkSurfaceCard)
                                   ) {
-                                      Icon(Icons.Default.VolumeUp, contentDescription = null, tint = if (isPlayingAudio) DarkOledBlack else TextPureWhite)
+                                      Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, tint = if (isPlayingAudio) DarkOledBlack else TextPureWhite)
                                   }
                               }
 
@@ -1461,6 +1465,7 @@ jobs:
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.filled.ArrowBack
           import androidx.compose.material.icons.filled.*
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
@@ -1500,7 +1505,7 @@ jobs:
 
               Column(modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                   Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                      IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = null, tint = TextPureWhite) }
+                      IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = TextPureWhite) }
                       Text("Salah Guide", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                       Spacer(modifier = Modifier.weight(1f))
                       Text("Step ${current.step} of ${if (steps.isNotEmpty()) steps.size else 3}", color = MintSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -1552,6 +1557,7 @@ jobs:
           import androidx.compose.foundation.shape.CircleShape
           import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.filled.ArrowBack
           import androidx.compose.material.icons.filled.*
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
@@ -1576,7 +1582,7 @@ jobs:
 
               Column(modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(horizontal = 16.dp)) {
                   Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                      IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = null, tint = TextPureWhite) }
+                      IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = TextPureWhite) }
                       Text("Wudhu Guide", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                   }
                   LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
