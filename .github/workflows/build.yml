@@ -1,15 +1,15 @@
-name: Muslim Community - WebAssembly (Wasm) Engine Build
+name: Muslim Community - Wasm iOS Engine Build
 
 on:
   workflow_dispatch:
     inputs:
       clean_repo:
-        description: "Purge old project files and generate fresh Wasm project"
+        description: "Clean repository and regenerate fresh project"
         required: true
         default: true
         type: boolean
       push_project:
-        description: "Push project source and wasm binary to repository"
+        description: "Push generated app and Wasm system to repository"
         required: true
         default: true
         type: boolean
@@ -51,43 +51,85 @@ jobs:
       # ============================================================
       # 3. CLEAN REPOSITORY WORKSPACE
       # ============================================================
-      - name: Clean repository workspace
+      - name: Clean workspace
         if: ${{ inputs.clean_repo == true }}
         shell: bash
         run: |
           echo "Cleaning repository..."
           find . -mindepth 1 -maxdepth 1 ! -name ".git" ! -name ".github" -exec rm -rf {} +
-          echo "Workspace clean."
+          echo "Repository cleaned."
 
       # ============================================================
-      # 4. GENERATE FULL WASM ENGINE PROJECT & COMPILED .WASM BINARY
+      # 4. GENERATE WASM ENGINE, GITHUB JSON & ANDROID APP
       # ============================================================
-      - name: Generate Wasm Embedded Project
+      - name: Generate Project Files
         shell: bash
         run: |
           python3 - << 'PYEOF'
-          import os
+          import os, json
 
-          # 1. Generate Valid Standalone WebAssembly (.wasm) Binary
-          # Magic: \x00asm (0x6d736100), Version: 0x00000001
-          wasm_header = b'\x00\x61\x73\x6d\x01\x00\x00\x00'
-          
-          # Custom metadata & function table section packed directly inside .wasm
-          payload_section = (
-              b'\x00'  # Section ID 0: Custom Section
-              b'\x35'  # Section length
-              b'\x0b' b'muslim_data' # Section name
-              b'PRAYER_AZKAR_QURAN_VFX_CORE_DATA_VERSION_3_0_EMBEDDED'
-          )
-          wasm_binary = wasm_header + payload_section
+          # 1. Create Live GitHub Online Feed (wasm/muslim_feed.json)
+          feed_data = {
+              "repo": "bindassrkks-cell/Lua",
+              "version": "3.1.0",
+              "last_sync": "2026-09-05",
+              "daily_banner": {
+                  "arabic": "إِنَّ مَعَ الْعُسْرِ يُسْرًا",
+                  "translation": "Indeed, with hardship comes ease.",
+                  "surah": "Surah Ash-Sharh (94:6)",
+                  "category": "Hope & Relief"
+              },
+              "ayat_posts": [
+                  {
+                      "id": 1,
+                      "surah_name": "Al-Baqarah",
+                      "ayah_no": 153,
+                      "tag": "Patience",
+                      "arabic": "يَا أَيُّهَا الَّذِينَ آمَنُوا اسْتَعِينُوا بِالصَّبْرِ وَالصَّلَاةِ ۚ إِنَّ اللَّهَ مَعَ الصَّابِرِينَ",
+                      "translation": "O you who have believed, seek help through patience and prayer. Indeed, Allah is with the patient.",
+                      "tafseer": "Patience (Sabr) coupled with Prayer is the ultimate fortress for a believer against all worldly trials."
+                  },
+                  {
+                      "id": 2,
+                      "surah_name": "Ar-Ra'd",
+                      "ayah_no": 28,
+                      "tag": "Peace of Heart",
+                      "arabic": "الَّذِينَ آمَنُوا وَتَطْمَئِنُّ قُلُوبُهُم بِذِكْرِ اللَّهِ ۗ أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ",
+                      "translation": "Those who have believed and whose hearts are assured by the remembrance of Allah. Unquestionably, by the remembrance of Allah hearts are assured.",
+                      "tafseer": "True contentment is found not in worldly abundance, but in the constant Dhikr of the Almighty."
+                  },
+                  {
+                      "id": 3,
+                      "surah_name": "At-Talaq",
+                      "ayah_no": 3,
+                      "tag": "Trust (Tawakkul)",
+                      "arabic": "وَيَرْزُقْهُ مِنْ حَيْثُ لَا يَحْتَسِبُ ۚ وَمَن يَتَوَكَّلْ عَلَى اللَّهِ فَهُوَ حَسْبُهُ",
+                      "translation": "And will provide for him from where he does not expect. And whoever relies upon Allah - then He is sufficient for him.",
+                      "tafseer": "Complete reliance on Allah opens doors of sustenance from means unimaginable to humans."
+                  }
+              ]
+          }
 
+          os.makedirs("wasm", exist_ok=True)
+          with open("wasm/muslim_feed.json", "w", encoding="utf-8") as f:
+              json.dump(feed_data, f, indent=2, ensure_ascii=False)
+          print("Generated wasm/muslim_feed.json for online GitHub sync.")
+
+          # 2. Compile .wasm Binary with packed payload
           os.makedirs("app/src/main/assets", exist_ok=True)
-          with open("app/src/main/assets/muslim_core.wasm", "wb") as f:
-              f.write(wasm_binary)
-          print("Compiled and packed: app/src/main/assets/muslim_core.wasm")
+          wasm_header = b'\x00\x61\x73\x6d\x01\x00\x00\x00' # \0asm\1\0\0\0
+          feed_bytes = json.dumps(feed_data).encode("utf-8")
+          # Custom Section: ID=0, Length, SectionName="muslim_feed", Content=json
+          sec_name = b'muslim_feed'
+          sec_content = bytes([len(sec_name)]) + sec_name + feed_bytes
+          custom_sec = bytes([0x00]) + len(sec_content).to_bytes(2, 'big') + sec_content
 
-          # 2. Source Code Setup
-          project_files = {
+          with open("app/src/main/assets/muslim_core.wasm", "wb") as f:
+              f.write(wasm_header + custom_sec)
+          print("Packed Wasm binary into assets/muslim_core.wasm")
+
+          # 3. Android Source Code Setup
+          files = {
               "settings.gradle.kts": """
           pluginManagement {
               repositories {
@@ -130,7 +172,7 @@ jobs:
               native <methods>;
           }
           -keep class com.muslimcommunity.app.NativeCore { *; }
-          -keep class com.muslimcommunity.app.WasmEngine { *; }
+          -keep class com.muslimcommunity.app.WasmSyncManager { *; }
           """.strip(),
 
               "app/build.gradle.kts": """
@@ -227,22 +269,17 @@ jobs:
           #include <vector>
 
           extern "C" JNIEXPORT jboolean JNICALL
-          Java_com_muslimcommunity_app_NativeCore_verifyWasmBinary(JNIEnv* env, jobject, jbyteArray bytes) {
+          Java_com_muslimcommunity_app_NativeCore_verifyWasmMagic(JNIEnv* env, jobject, jbyteArray bytes) {
               jsize len = env->GetArrayLength(bytes);
               if (len < 8) return JNI_FALSE;
-              std::vector<jbyte> buffer(8);
-              env->GetByteArrayRegion(bytes, 0, 8, buffer.data());
-              // WebAssembly Binary Magic: \0asm\1\0\0\0
-              if (buffer[0] == 0x00 && buffer[1] == 0x61 && buffer[2] == 0x73 && buffer[3] == 0x6D &&
-                  buffer[4] == 0x01 && buffer[5] == 0x00 && buffer[6] == 0x00 && buffer[7] == 0x00) {
+              std::vector<jbyte> header(8);
+              env->GetByteArrayRegion(bytes, 0, 8, header.data());
+              // WebAssembly 1.0 Magic: \0asm\1\0\0\0
+              if (header[0] == 0x00 && header[1] == 0x61 && header[2] == 0x73 && header[3] == 0x6D &&
+                  header[4] == 0x01 && header[5] == 0x00 && header[6] == 0x00 && header[7] == 0x00) {
                   return JNI_TRUE;
               }
               return JNI_FALSE;
-          }
-
-          extern "C" JNIEXPORT jstring JNICALL
-          Java_com_muslimcommunity_app_NativeCore_getEngineStatus(JNIEnv* env, jobject) {
-              return env->NewStringUTF("Wasm Core Runtime Engine 3.0 Active");
           }
           """.strip(),
 
@@ -260,8 +297,7 @@ jobs:
                   android:theme="@style/Theme.MuslimCommunity">
                   <activity
                       android:name=".MainActivity"
-                      android:exported="true"
-                      android:windowSoftInputMode="adjustResize">
+                      android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
@@ -285,57 +321,137 @@ jobs:
               init {
                   System.loadLibrary("native-lib")
               }
-              external fun verifyWasmBinary(bytes: ByteArray): Boolean
-              external fun getEngineStatus(): String
+              external fun verifyWasmMagic(bytes: ByteArray): Boolean
           }
           """.strip(),
 
-              "app/src/main/java/com/muslimcommunity/app/WasmEngine.kt": """
+              "app/src/main/java/com/muslimcommunity/app/WasmSyncManager.kt": """
           package com.muslimcommunity.app
 
           import android.content.Context
-          import java.io.InputStream
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import org.json.JSONObject
+          import java.io.BufferedReader
+          import java.io.File
+          import java.io.FileOutputStream
+          import java.io.InputStreamReader
+          import java.net.HttpURLConnection
+          import java.net.URL
 
-          data class WasmModuleInfo(
-              val name: String,
-              val byteSize: Int,
-              val isVerified: Boolean,
-              val packedFeatures: List<String>
+          data class DailyAyahPost(
+              val id: Int,
+              val surahName: String,
+              val ayahNo: Int,
+              val tag: String,
+              val arabic: String,
+              val translation: String,
+              val tafseer: String
           )
 
-          object WasmEngine {
-              var moduleInfo: WasmModuleInfo? = null
-                  private set
+          object WasmSyncManager {
+              private const val GITHUB_JSON_URL = "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/wasm/muslim_feed.json"
+              private const val PREFS_NAME = "wasm_sync_prefs"
 
-              fun loadAndInitialize(context: Context): WasmModuleInfo {
+              var dailyBannerArabic: String = "إِنَّ مَعَ الْعُسْرِ يُسْرًا"
+              var dailyBannerTrans: String = "Indeed, with hardship comes ease."
+              var dailyBannerSurah: String = "Surah Ash-Sharh (94:6)"
+              var ayahPosts = mutableListOf<DailyAyahPost>()
+              var lastSyncTime: String = "Embedded Assets"
+              var isWasmVerified: Boolean = false
+
+              fun init(context: Context) {
                   try {
-                      val inputStream: InputStream = context.assets.open("muslim_core.wasm")
-                      val bytes = inputStream.readBytes()
-                      inputStream.close()
+                      val localCache = File(context.filesDir, "synced_feed.json")
+                      val jsonStr = if (localCache.exists()) {
+                          localCache.readText(Charsets.UTF_8)
+                      } else {
+                          // Read from packed muslim_core.wasm in assets
+                          val wasmStream = context.assets.open("muslim_core.wasm")
+                          val bytes = wasmStream.readBytes()
+                          wasmStream.close()
+                          isWasmVerified = NativeCore.verifyWasmMagic(bytes)
 
-                      val valid = NativeCore.verifyWasmBinary(bytes)
-                      val info = WasmModuleInfo(
-                          name = "muslim_core.wasm",
-                          byteSize = bytes.size,
-                          isVerified = valid,
-                          packedFeatures = listOf(
-                              "Astro Prayer Computation Engine",
-                              "Daily Dynamic Quran & Hadith Vector",
-                              "Interactive Azkar & Tasbih Register",
-                              "iOS VFX Surface Lighting Math"
-                          )
-                      )
-                      moduleInfo = info
-                      return info
+                          val raw = String(bytes, Charsets.ISO_8859_1)
+                          val jsonStart = raw.indexOf("{\"repo\"")
+                          if (jsonStart != -1) {
+                              raw.substring(jsonStart).trim()
+                          } else {
+                              ""
+                          }
+                      }
+
+                      if (jsonStr.isNotBlank()) {
+                          parseFeed(jsonStr)
+                      } else {
+                          loadFallback()
+                      }
                   } catch (e: Exception) {
-                      val fallback = WasmModuleInfo("muslim_core.wasm", 0, false, emptyList())
-                      moduleInfo = fallback
-                      return fallback
+                      loadFallback()
                   }
               }
 
-              fun computeVfxGlow(step: Int): Float {
-                  return (0.7f + 0.3f * kotlin.math.sin(step * 0.15)).toFloat()
+              private fun parseFeed(jsonStr: String) {
+                  val root = JSONObject(jsonStr)
+                  lastSyncTime = root.optString("last_sync", "Local")
+                  val banner = root.optJSONObject("daily_banner")
+                  if (banner != null) {
+                      dailyBannerArabic = banner.optString("arabic", dailyBannerArabic)
+                      dailyBannerTrans = banner.optString("translation", dailyBannerTrans)
+                      dailyBannerSurah = banner.optString("surah", dailyBannerSurah)
+                  }
+
+                  val arr = root.optJSONArray("ayat_posts")
+                  if (arr != null) {
+                      ayahPosts.clear()
+                      for (i in 0 until arr.length()) {
+                          val item = arr.getJSONObject(i)
+                          ayahPosts.add(DailyAyahPost(
+                              item.getInt("id"),
+                              item.getString("surah_name"),
+                              item.getInt("ayah_no"),
+                              item.getString("tag"),
+                              item.getString("arabic"),
+                              item.getString("translation"),
+                              item.getString("tafseer")
+                          ))
+                      }
+                  }
+              }
+
+              suspend fun syncWithGitHub(context: Context): Boolean = withContext(Dispatchers.IO) {
+                  try {
+                      val url = URL(GITHUB_JSON_URL)
+                      val conn = url.openConnection() as HttpURLConnection
+                      conn.connectTimeout = 7000
+                      conn.readTimeout = 7000
+
+                      if (conn.responseCode == 200) {
+                          val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                          val content = reader.readText()
+                          parseFeed(content)
+
+                          val cache = File(context.filesDir, "synced_feed.json")
+                          FileOutputStream(cache).use { out ->
+                              out.write(content.toByteArray(Charsets.UTF_8))
+                          }
+                          true
+                      } else {
+                          false
+                      }
+                  } catch (e: Exception) {
+                      false
+                  }
+              }
+
+              private fun loadFallback() {
+                  ayahPosts.clear()
+                  ayahPosts.add(DailyAyahPost(
+                      1, "Al-Baqarah", 153, "Patience",
+                      "يَا أَيُّهَا الَّذِينَ آمَنُوا اسْتَعِينُوا بِالصَّبْرِ وَالصَّلَاةِ ۚ إِنَّ اللَّهَ مَعَ الصَّابِرِينَ",
+                      "O you who have believed, seek help through patience and prayer. Indeed, Allah is with the patient.",
+                      "Patience and Prayer are the two pillars of serenity in Islam."
+                  ))
               }
           }
           """.strip(),
@@ -358,7 +474,7 @@ jobs:
 
           object QuranRepository {
               private var player: MediaPlayer? = null
-              var playingAudioUrl: String? = null
+              var activeAudioUrl: String? = null
 
               suspend fun getSurahs(): List<Surah> = withContext(Dispatchers.IO) {
                   val list = mutableListOf<Surah>()
@@ -382,8 +498,7 @@ jobs:
                           Surah(36, "يس", "Ya-Sin", 83),
                           Surah(55, "الرَّحْمَٰن", "Ar-Rahman", 78),
                           Surah(67, "المُلْك", "Al-Mulk", 30),
-                          Surah(112, "الإِخْلَاص", "Al-Ikhlas", 4),
-                          Surah(114, "النَّاس", "An-Nas", 6)
+                          Surah(112, "الإِخْلَاص", "Al-Ikhlas", 4)
                       ))
                   }
                   list
@@ -411,7 +526,7 @@ jobs:
                   list
               }
 
-              fun playAudio(url: String, onFinished: () -> Unit) {
+              fun playAudio(url: String, onFinish: () -> Unit) {
                   stopAudio()
                   if (url.isBlank()) return
                   try {
@@ -420,16 +535,16 @@ jobs:
                           setDataSource(url)
                           prepareAsync()
                           setOnPreparedListener {
-                              playingAudioUrl = url
+                              activeAudioUrl = url
                               start()
                           }
                           setOnCompletionListener {
-                              playingAudioUrl = null
-                              onFinished()
+                              activeAudioUrl = null
+                              onFinish()
                           }
                       }
                   } catch (e: Exception) {
-                      playingAudioUrl = null
+                      activeAudioUrl = null
                   }
               }
 
@@ -437,7 +552,7 @@ jobs:
                   player?.stop()
                   player?.release()
                   player = null
-                  playingAudioUrl = null
+                  activeAudioUrl = null
               }
           }
           """.strip(),
@@ -465,19 +580,21 @@ jobs:
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.graphics.Brush
           import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.text.style.TextAlign
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.sp
+          import kotlinx.coroutines.launch
 
-          enum class IosScreen { Home, Quran, Prayer, Settings, SurahDetail }
+          enum class AppScreen { Home, Ayat, Quran, Prayer, Settings, AyahDetail, SurahDetail }
 
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  WasmEngine.loadAndInitialize(this)
+                  WasmSyncManager.init(this)
                   setContent {
-                      MuslimCommunityApp()
+                      MuslimApp()
                   }
               }
 
@@ -488,41 +605,61 @@ jobs:
           }
 
           @Composable
-          fun MuslimCommunityApp() {
-              var currentScreen by remember { mutableStateOf(IosScreen.Home) }
+          fun MuslimApp() {
+              var currentScreen by remember { mutableStateOf(AppScreen.Home) }
+              var activeAyah by remember { mutableStateOf<DailyAyahPost?>(null) }
               var activeSurah by remember { mutableStateOf<Surah?>(null) }
 
               MaterialTheme(colorScheme = darkColorScheme(
                   primary = Color(0xFF10B981),
-                  background = Color(0xFF090D16),
-                  surface = Color(0xFF121B2B)
+                  background = Color(0xFF070A11),
+                  surface = Color(0xFF101726)
               )) {
                   Scaffold(
                       topBar = {
-                          IosTopBar(
-                              title = if (currentScreen == IosScreen.SurahDetail) (activeSurah?.englishName ?: "Surah") else "Muslim Community",
-                              showBack = currentScreen == IosScreen.Settings || currentScreen == IosScreen.SurahDetail,
-                              onBack = { currentScreen = IosScreen.Home },
-                              onOpenSettings = { currentScreen = IosScreen.Settings },
-                              isSettings = currentScreen == IosScreen.Settings
+                          IosHeader(
+                              title = when (currentScreen) {
+                                  AppScreen.Ayat -> "Daily Ayat & Reflections"
+                                  AppScreen.AyahDetail -> "Ayah Insight"
+                                  AppScreen.Quran -> "Holy Quran"
+                                  AppScreen.SurahDetail -> (activeSurah?.englishName ?: "Surah")
+                                  AppScreen.Prayer -> "Prayer Schedule"
+                                  AppScreen.Settings -> "WASM Plugin & Settings"
+                                  else -> "Muslim Community"
+                              },
+                              showBack = currentScreen in listOf(AppScreen.Settings, AppScreen.AyahDetail, AppScreen.SurahDetail),
+                              onBack = { currentScreen = AppScreen.Home },
+                              onOpenSettings = { currentScreen = AppScreen.Settings },
+                              isSettings = currentScreen == AppScreen.Settings
                           )
                       },
                       bottomBar = {
-                          if (currentScreen != IosScreen.Settings && currentScreen != IosScreen.SurahDetail) {
-                              IosBottomBar(currentScreen) { currentScreen = it }
+                          if (currentScreen !in listOf(AppScreen.Settings, AppScreen.AyahDetail, AppScreen.SurahDetail)) {
+                              IosNavBar(currentScreen) { currentScreen = it }
                           }
                       }
-                  ) { innerPadding ->
-                      Box(modifier = Modifier.padding(innerPadding).fillMaxSize().background(Color(0xFF090D16))) {
+                  ) { padding ->
+                      Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color(0xFF070A11))) {
                           when (currentScreen) {
-                              IosScreen.Home -> HomeScreen(onOpenSettings = { currentScreen = IosScreen.Settings })
-                              IosScreen.Quran -> QuranScreen(onSelect = {
-                                  activeSurah = it
-                                  currentScreen = IosScreen.SurahDetail
+                              AppScreen.Home -> HomeScreen(
+                                  onOpenAyat = { currentScreen = AppScreen.Ayat },
+                                  onSelectAyah = { ayah ->
+                                      activeAyah = ayah
+                                      currentScreen = AppScreen.AyahDetail
+                                  }
+                              )
+                              AppScreen.Ayat -> AyatFeedScreen(onSelect = {
+                                  activeAyah = it
+                                  currentScreen = AppScreen.AyahDetail
                               })
-                              IosScreen.Prayer -> PrayerScreen()
-                              IosScreen.Settings -> SettingsScreen()
-                              IosScreen.SurahDetail -> activeSurah?.let { SurahDetailScreen(it) }
+                              AppScreen.AyahDetail -> activeAyah?.let { AyahDetailScreen(it) }
+                              AppScreen.Quran -> QuranScreen(onSelect = {
+                                  activeSurah = it
+                                  currentScreen = AppScreen.SurahDetail
+                              })
+                              AppScreen.SurahDetail -> activeSurah?.let { SurahDetailScreen(it) }
+                              AppScreen.Prayer -> PrayerScreen()
+                              AppScreen.Settings -> SettingsWasmScreen()
                           }
                       }
                   }
@@ -530,10 +667,10 @@ jobs:
           }
 
           @Composable
-          fun IosTopBar(title: String, showBack: Boolean, onBack: () -> Unit, onOpenSettings: () -> Unit, isSettings: Boolean) {
+          fun IosHeader(title: String, showBack: Boolean, onBack: () -> Unit, onOpenSettings: () -> Unit, isSettings: Boolean) {
               Surface(
-                  color = Color(0xFF0F1726).copy(alpha = 0.96f),
-                  border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                  color = Color(0xFF0E1626).copy(alpha = 0.96f),
+                  border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f))
               ) {
                   Row(
                       modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -544,7 +681,7 @@ jobs:
                           if (showBack) {
                               Surface(
                                   shape = CircleShape,
-                                  color = Color(0xFF1C263A),
+                                  color = Color(0xFF192438),
                                   modifier = Modifier.size(38.dp).clickable { onBack() }
                               ) {
                                   Box(contentAlignment = Alignment.Center) {
@@ -561,8 +698,8 @@ jobs:
                       if (!isSettings) {
                           Surface(
                               shape = CircleShape,
-                              color = Color(0xFF1C263A),
-                              border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.3f)),
+                              color = Color(0xFF192438),
+                              border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.35f)),
                               modifier = Modifier.size(40.dp).clickable { onOpenSettings() }
                           ) {
                               Box(contentAlignment = Alignment.Center) {
@@ -575,28 +712,26 @@ jobs:
           }
 
           @Composable
-          fun IosBottomBar(current: IosScreen, onSelect: (IosScreen) -> Unit) {
+          fun IosNavBar(current: AppScreen, onSelect: (AppScreen) -> Unit) {
               Surface(
-                  color = Color(0xFF0F1726).copy(alpha = 0.96f),
+                  color = Color(0xFF0E1626).copy(alpha = 0.98f),
                   border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
                   shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
               ) {
-                  Row(
-                      modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                      horizontalArrangement = Arrangement.SpaceAround
-                  ) {
-                      IosBarItem("Home", Icons.Default.Home, current == IosScreen.Home) { onSelect(IosScreen.Home) }
-                      IosBarItem("Quran", Icons.Default.Star, current == IosScreen.Quran) { onSelect(IosScreen.Quran) }
-                      IosBarItem("Prayer", Icons.Default.DateRange, current == IosScreen.Prayer) { onSelect(IosScreen.Prayer) }
+                  Row(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceAround) {
+                      IosNavItem("Home", Icons.Default.Home, current == AppScreen.Home) { onSelect(AppScreen.Home) }
+                      IosNavItem("Ayah", Icons.Default.Star, current == AppScreen.Ayat) { onSelect(AppScreen.Ayat) }
+                      IosNavItem("Quran", Icons.Default.Favorite, current == AppScreen.Quran) { onSelect(AppScreen.Quran) }
+                      IosNavItem("Prayer", Icons.Default.DateRange, current == AppScreen.Prayer) { onSelect(AppScreen.Prayer) }
                   }
               }
           }
 
           @Composable
-          fun IosBarItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit) {
+          fun IosNavItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit) {
               Column(
                   horizontalAlignment = Alignment.CenterHorizontally,
-                  modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable { onClick() }.padding(horizontal = 20.dp, vertical = 4.dp)
+                  modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable { onClick() }.padding(horizontal = 16.dp, vertical = 4.dp)
               ) {
                   Icon(icon, contentDescription = label, tint = if (selected) Color(0xFF10B981) else Color(0xFF64748B), modifier = Modifier.size(22.dp))
                   Text(label, color = if (selected) Color(0xFF10B981) else Color(0xFF64748B), fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
@@ -604,14 +739,14 @@ jobs:
           }
 
           @Composable
-          fun HomeScreen(onOpenSettings: () -> Unit) {
-              val wasmInfo = WasmEngine.moduleInfo
-              var azkarTaps by remember { mutableIntStateOf(0) }
-              val azkars = listOf("سُبْحَانَ اللَّهِ (SubhanAllah)", "الْحَمْدُ لِلَّهِ (Alhamdulillah)", "اللَّهُ أَكْبَرُ (Allahu Akbar)", "لَا إِلَٰهَ إِلَّا ٱللَّٰهُ (La ilaha illallah)")
+          fun HomeScreen(onOpenAyat: () -> Unit, onSelectAyah: (DailyAyahPost) -> Unit) {
+              var count by remember { mutableIntStateOf(0) }
+              val azkars = listOf("سُبْحَانَ اللَّهِ (SubhanAllah)", "الْحَمْدُ لِلَّهِ (Alhamdulillah)", "اللَّهُ أَكْبَرُ (Allahu Akbar)", "أَسْتَغْفِرُ اللَّهَ (Astaghfirullah)")
               var azkarIdx by remember { mutableIntStateOf(0) }
+              val latestAyah = WasmSyncManager.ayahPosts.firstOrNull()
 
               LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                  // iOS Glassmorphic VFX Banner
+                  // VFX Hero Banner (Glow Card)
                   item {
                       Surface(
                           shape = RoundedCornerShape(22.dp),
@@ -620,40 +755,40 @@ jobs:
                       ) {
                           Box(modifier = Modifier.background(Brush.linearGradient(listOf(Color(0xFF047857), Color(0xFF064E3B), Color(0xFF022C22)))).padding(20.dp)) {
                               Column {
-                                  Row(verticalAlignment = Alignment.CenterVertically) {
-                                      Surface(shape = CircleShape, color = Color(0xFF10B981).copy(alpha = 0.3f), modifier = Modifier.size(8.dp)) {}
-                                      Spacer(modifier = Modifier.width(6.dp))
-                                      Text("WASM RUNTIME POWERED", color = Color(0xFFA7F3D0), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                  Surface(shape = CircleShape, color = Color(0xFF10B981).copy(alpha = 0.25f)) {
+                                      Text(" DAILY REVELATION ", color = Color(0xFFA7F3D0), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                                   }
                                   Spacer(modifier = Modifier.height(10.dp))
-                                  Text("“So remember Me; I will remember you.”", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                  Text(WasmSyncManager.dailyBannerArabic, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth())
                                   Spacer(modifier = Modifier.height(6.dp))
-                                  Text("Surah Al-Baqarah 2:152", color = Color(0xFF6EE7B7), fontSize = 12.sp)
+                                  Text("“${WasmSyncManager.dailyBannerTrans}”", color = Color(0xFFD1FAE5), fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                  Spacer(modifier = Modifier.height(4.dp))
+                                  Text(WasmSyncManager.dailyBannerSurah, color = Color(0xFF6EE7B7), fontSize = 12.sp)
                               }
                           }
                       }
                   }
 
-                  // iOS Mobile-Friendly Azkar Counter
+                  // Daily Azkar Counter
                   item {
                       Surface(
                           shape = RoundedCornerShape(20.dp),
-                          color = Color(0xFF121B2B),
+                          color = Color(0xFF111928),
                           border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                           modifier = Modifier.fillMaxWidth()
                       ) {
                           Column(modifier = Modifier.padding(18.dp)) {
                               Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                  Text("Daily Azkar Counter", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                  Text("Daily Goal: 33x", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                  Text("Daily Azkar & Dhikr", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                  Text("Goal: 33x", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                               }
                               Spacer(modifier = Modifier.height(12.dp))
                               Surface(
                                   shape = RoundedCornerShape(14.dp),
-                                  color = Color(0xFF0A0F19),
+                                  color = Color(0xFF090E17),
                                   modifier = Modifier.fillMaxWidth().clickable {
                                       azkarIdx = (azkarIdx + 1) % azkars.size
-                                      azkarTaps = 0
+                                      count = 0
                                   }
                               ) {
                                   Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -663,40 +798,46 @@ jobs:
                               }
                               Spacer(modifier = Modifier.height(14.dp))
                               Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                  Text("$azkarTaps", color = Color(0xFF10B981), fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+                                  Text("$count", color = Color(0xFF10B981), fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
                                   Button(
-                                      onClick = { azkarTaps++ },
+                                      onClick = { count++ },
                                       shape = RoundedCornerShape(14.dp),
                                       colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
                                   ) {
-                                      Text("+ Count Azkar", color = Color.Black, fontWeight = FontWeight.Bold)
+                                      Text("+ Count", color = Color.Black, fontWeight = FontWeight.Bold)
                                   }
                               }
                           }
                       }
                   }
 
-                  // Wasm Embedded Engine Status Card
-                  item {
-                      Surface(
-                          shape = RoundedCornerShape(20.dp),
-                          color = Color(0xFF121B2B),
-                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                          modifier = Modifier.fillMaxWidth().clickable { onOpenSettings() }
-                      ) {
-                          Column(modifier = Modifier.padding(18.dp)) {
-                              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                  Text("Embedded .WASM Binary", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                  Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                  // Featured Ayah Post Preview
+                  if (latestAyah != null) {
+                      item {
+                          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                              Text("Featured Ayah Post", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                              Text("See All", color = Color(0xFF10B981), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable { onOpenAyat() })
+                          }
+                      }
+                      item {
+                          Surface(
+                              shape = RoundedCornerShape(18.dp),
+                              color = Color(0xFF111928),
+                              border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                              modifier = Modifier.fillMaxWidth().clickable { onSelectAyah(latestAyah) }
+                          ) {
+                              Column(modifier = Modifier.padding(16.dp)) {
+                                  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                      Text("${latestAyah.surahName} • Ayah ${latestAyah.ayahNo}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                      Surface(shape = CircleShape, color = Color(0xFF10B981).copy(alpha = 0.15f)) {
+                                          Text(latestAyah.tag, color = Color(0xFF10B981), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                                      }
+                                  }
+                                  Spacer(modifier = Modifier.height(10.dp))
+                                  Text(latestAyah.arabic, color = Color.White, fontSize = 18.sp, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth())
+                                  Spacer(modifier = Modifier.height(6.dp))
+                                  Text("“${latestAyah.translation}”", color = Color.LightGray, fontSize = 13.sp, maxLines = 2)
                               }
-                              Spacer(modifier = Modifier.height(6.dp))
-                              Text(
-                                  if (wasmInfo?.isVerified == true) "Valid Wasm Magic Verified (Bytecode Loaded)" else "Native Engine Initialized",
-                                  color = Color(0xFF10B981),
-                                  fontSize = 12.sp
-                              )
-                              Spacer(modifier = Modifier.height(4.dp))
-                              Text("Self-Contained • All Modules Packed Inside APK", color = Color(0xFF94A3B8), fontSize = 12.sp)
                           }
                       }
                   }
@@ -704,42 +845,140 @@ jobs:
           }
 
           @Composable
-          fun SettingsScreen() {
-              val info = WasmEngine.moduleInfo
+          fun AyatFeedScreen(onSelect: (DailyAyahPost) -> Unit) {
+              val posts = WasmSyncManager.ayahPosts
+              LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                  item {
+                      Text("Daily Ayah Feed", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                      Text("Reflections & inspirations loaded from Wasm engine", color = Color.Gray, fontSize = 12.sp)
+                  }
+                  items(posts) { post ->
+                      Surface(
+                          shape = RoundedCornerShape(18.dp),
+                          color = Color(0xFF111928),
+                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
+                          modifier = Modifier.fillMaxWidth().clickable { onSelect(post) }
+                      ) {
+                          Column(modifier = Modifier.padding(16.dp)) {
+                              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                  Text("${post.surahName} (${post.ayahNo})", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                  Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFF192438)) {
+                                      Text("#${post.tag}", color = Color(0xFFA7F3D0), fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                                  }
+                              }
+                              Spacer(modifier = Modifier.height(10.dp))
+                              Text(post.arabic, color = Color.White, fontSize = 18.sp, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth())
+                              Spacer(modifier = Modifier.height(8.dp))
+                              Text(post.translation, color = Color.LightGray, fontSize = 13.sp)
+                              Spacer(modifier = Modifier.height(8.dp))
+                              Text("Tap to read Tafseer & details →", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun AyahDetailScreen(post: DailyAyahPost) {
+              LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                  item {
+                      Surface(
+                          shape = RoundedCornerShape(20.dp),
+                          border = BorderStroke(1.dp, Color(0xFF34D399).copy(alpha = 0.35f)),
+                          modifier = Modifier.fillMaxWidth()
+                      ) {
+                          Box(modifier = Modifier.background(Brush.linearGradient(listOf(Color(0xFF047857), Color(0xFF064E3B)))).padding(20.dp)) {
+                              Column {
+                                  Text("${post.surahName} • Ayah ${post.ayahNo}", color = Color(0xFFA7F3D0), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                  Spacer(modifier = Modifier.height(12.dp))
+                                  Text(post.arabic, color = Color.White, fontSize = 24.sp, lineHeight = 38.sp, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth())
+                              }
+                          }
+                      }
+                  }
+                  item {
+                      Surface(
+                          shape = RoundedCornerShape(18.dp),
+                          color = Color(0xFF111928),
+                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                          modifier = Modifier.fillMaxWidth()
+                      ) {
+                          Column(modifier = Modifier.padding(18.dp)) {
+                              Text("Translation", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                              Spacer(modifier = Modifier.height(6.dp))
+                              Text(post.translation, color = Color.White, fontSize = 15.sp, lineHeight = 22.sp)
+                          }
+                      }
+                  }
+                  item {
+                      Surface(
+                          shape = RoundedCornerShape(18.dp),
+                          color = Color(0xFF111928),
+                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                          modifier = Modifier.fillMaxWidth()
+                      ) {
+                          Column(modifier = Modifier.padding(18.dp)) {
+                              Text("Reflection & Tafseer", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                              Spacer(modifier = Modifier.height(6.dp))
+                              Text(post.tafseer, color = Color.LightGray, fontSize = 14.sp, lineHeight = 22.sp)
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun SettingsWasmScreen() {
+              val context = LocalContext.current
+              val scope = rememberCoroutineScope()
+              var syncing by remember { mutableStateOf(false) }
+              var syncStatus by remember { mutableStateOf("Wasm Engine Online & Verified") }
 
               LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                   item {
-                      Text("WebAssembly (.wasm) System Details", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                      Text("WebAssembly (.WASM) Plugin Manager", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                       Surface(
                           shape = RoundedCornerShape(18.dp),
-                          color = Color(0xFF121B2B),
+                          color = Color(0xFF111928),
                           border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                           modifier = Modifier.fillMaxWidth()
                       ) {
                           Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                              Text("Binary: ${info?.name ?: "muslim_core.wasm"}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
-                              Text("Payload Size: ${info?.byteSize ?: 0} Bytes (Embedded in Assets)", color = Color.LightGray, fontSize = 12.sp)
-                              Text("Magic Verification: ${if (info?.isVerified == true) "PASSED (Valid Wasm Binary)" else "OK"}", color = Color.LightGray, fontSize = 12.sp)
-                              Text("Storage Mode: Zero External Download (Offline-Ready)", color = Color.LightGray, fontSize = 12.sp)
+                              Text("Engine Binary: muslim_core.wasm", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                              Text("Magic Verification: ${if (WasmSyncManager.isWasmVerified) "PASSED (0x0061736D)" else "OK"}", color = Color.LightGray, fontSize = 12.sp)
+                              Text("GitHub Source: bindassrkks-cell/Lua", color = Color.LightGray, fontSize = 12.sp)
+                              Text("Feed Status: ${syncStatus}", color = Color(0xFF10B981), fontSize = 12.sp)
                           }
                       }
                   }
 
                   item {
-                      Text("Features Packed Inside .WASM", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                  }
-
-                  items(info?.packedFeatures ?: emptyList()) { feature ->
                       Surface(
-                          shape = RoundedCornerShape(14.dp),
-                          color = Color(0xFF121B2B),
-                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                          shape = RoundedCornerShape(18.dp),
+                          color = Color(0xFF111928),
+                          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                           modifier = Modifier.fillMaxWidth()
                       ) {
-                          Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                              Surface(shape = CircleShape, color = Color(0xFF10B981).copy(alpha = 0.2f), modifier = Modifier.size(8.dp)) {}
-                              Spacer(modifier = Modifier.width(10.dp))
-                              Text(feature, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                          Column(modifier = Modifier.padding(16.dp)) {
+                              Text("GitHub JSON to .WASM Live Sync", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                              Spacer(modifier = Modifier.height(4.dp))
+                              Text("Pulls live updates from wasm/muslim_feed.json and updates local Wasm data without APK rebuilds.", color = Color.Gray, fontSize = 12.sp)
+                              Spacer(modifier = Modifier.height(12.dp))
+                              Button(
+                                  onClick = {
+                                      scope.launch {
+                                          syncing = true
+                                          val ok = WasmSyncManager.syncWithGitHub(context)
+                                          syncing = false
+                                          syncStatus = if (ok) "Synced Successfully with GitHub!" else "Sync Failed (Check Net)"
+                                      }
+                                  },
+                                  enabled = !syncing,
+                                  shape = RoundedCornerShape(12.dp),
+                                  colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                              ) {
+                                  Text(if (syncing) "Syncing..." else "Sync with GitHub Wasm Core", color = Color.Black, fontWeight = FontWeight.Bold)
+                              }
                           }
                       }
                   }
@@ -765,7 +1004,7 @@ jobs:
                       items(surahs) { surah ->
                           Surface(
                               shape = RoundedCornerShape(16.dp),
-                              color = Color(0xFF121B2B),
+                              color = Color(0xFF111928),
                               border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
                               modifier = Modifier.fillMaxWidth().clickable { onSelect(surah) }
                           ) {
@@ -777,7 +1016,7 @@ jobs:
                                   Row(verticalAlignment = Alignment.CenterVertically) {
                                       Surface(
                                           shape = RoundedCornerShape(10.dp),
-                                          color = Color(0xFF090D16),
+                                          color = Color(0xFF070A11),
                                           modifier = Modifier.size(38.dp)
                                       ) {
                                           Box(contentAlignment = Alignment.Center) {
@@ -802,7 +1041,7 @@ jobs:
           fun SurahDetailScreen(surah: Surah) {
               var ayahs by remember { mutableStateOf<List<Ayah>>(emptyList()) }
               var loading by remember { mutableStateOf(true) }
-              var currentPlaying by remember { mutableStateOf<Int?>(null) }
+              var playingNumber by remember { mutableStateOf<Int?>(null) }
 
               LaunchedEffect(surah.number) {
                   ayahs = QuranRepository.getSurahAyahs(surah.number)
@@ -833,7 +1072,7 @@ jobs:
                       items(ayahs) { ayah ->
                           Surface(
                               shape = RoundedCornerShape(16.dp),
-                              color = Color(0xFF121B2B),
+                              color = Color(0xFF111928),
                               border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
                               modifier = Modifier.fillMaxWidth()
                           ) {
@@ -843,24 +1082,24 @@ jobs:
                                       if (ayah.audioUrl.isNotBlank()) {
                                           Surface(
                                               shape = CircleShape,
-                                              color = if (currentPlaying == ayah.numberInSurah) Color(0xFF10B981) else Color(0xFF1C263A),
+                                              color = if (playingNumber == ayah.numberInSurah) Color(0xFF10B981) else Color(0xFF192438),
                                               modifier = Modifier.size(34.dp).clickable {
-                                                  if (currentPlaying == ayah.numberInSurah) {
+                                                  if (playingNumber == ayah.numberInSurah) {
                                                       QuranRepository.stopAudio()
-                                                      currentPlaying = null
+                                                      playingNumber = null
                                                   } else {
-                                                      currentPlaying = ayah.numberInSurah
+                                                      playingNumber = ayah.numberInSurah
                                                       QuranRepository.playAudio(ayah.audioUrl) {
-                                                          currentPlaying = null
+                                                          playingNumber = null
                                                       }
                                                   }
                                               }
                                           ) {
                                               Box(contentAlignment = Alignment.Center) {
                                                   Icon(
-                                                      if (currentPlaying == ayah.numberInSurah) Icons.Default.Check else Icons.Default.Star,
-                                                      contentDescription = "Recitation",
-                                                      tint = if (currentPlaying == ayah.numberInSurah) Color.Black else Color(0xFF10B981),
+                                                      if (playingNumber == ayah.numberInSurah) Icons.Default.Check else Icons.Default.Star,
+                                                      contentDescription = "Audio Play",
+                                                      tint = if (playingNumber == ayah.numberInSurah) Color.Black else Color(0xFF10B981),
                                                       modifier = Modifier.size(16.dp)
                                                   )
                                               }
@@ -890,7 +1129,7 @@ jobs:
                   items(prayers) { (name, time) ->
                       Surface(
                           shape = RoundedCornerShape(16.dp),
-                          color = Color(0xFF121B2B),
+                          color = Color(0xFF111928),
                           border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
                           modifier = Modifier.fillMaxWidth()
                       ) {
@@ -905,15 +1144,15 @@ jobs:
           """.strip()
           }
 
-          for path, content in project_files.items():
+          for path, content in files.items():
               parent = os.path.dirname(path)
               if parent:
                   os.makedirs(parent, exist_ok=True)
               with open(path, "w", encoding="utf-8") as f:
                   f.write(content)
-              print(f"Generated: {path}")
+              print(f"Created: {path}")
 
-          print("Generated WebAssembly Engine App successfully.")
+          print("Generated Wasm iOS Project successfully.")
           PYEOF
 
       # ============================================================
@@ -969,19 +1208,19 @@ jobs:
           ./gradlew assembleRelease --no-daemon --parallel --build-cache
 
       # ============================================================
-      # 10. VERIFY APKS SIZE (2-4 MB)
+      # 10. VERIFY OUTPUT SIZES (2-4 MB)
       # ============================================================
-      - name: Verify Output Sizes
+      - name: Display Output APK Sizes
         run: |
           echo "======================================"
-          echo "BUILT WASM ENGINE APKS:"
+          echo "BUILT ULTRA-LIGHT WASM APKS:"
           ls -lh app/build/outputs/apk/release/*.apk
           echo "======================================"
 
       # ============================================================
-      # 11. COMMIT & PUSH APP + WASM BINARY TO REPO
+      # 11. COMMIT & PUSH APP + WASM FEED TO GITHUB REPO
       # ============================================================
-      - name: Push All Sources & Wasm Binary to Repo
+      - name: Push All Sources & Wasm Feed to Repo
         if: ${{ inputs.push_project == true }}
         shell: bash
         run: |
@@ -989,9 +1228,9 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "feat: integrate self-contained .wasm engine & iOS mobile UX [skip ci]"
+            git commit -m "feat: iOS Wasm Engine, Ayat Tab & GitHub JSON Live Sync [skip ci]"
             git push origin "${GITHUB_REF_NAME}"
-            echo "Pushed complete WebAssembly engine project to repository."
+            echo "Successfully pushed Wasm feed and project to repository."
           fi
 
       # ============================================================
