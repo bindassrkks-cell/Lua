@@ -1,527 +1,360 @@
-name: Build, Commit Source & Release Core Native App
+name: Gemini Android Project Builder
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
   workflow_dispatch:
+    inputs:
+      force_replace:
+        description: "Replace existing Android project files"
+        required: true
+        default: "true"
+        type: boolean
 
 permissions:
   contents: write
 
+env:
+  JAVA_VERSION: "17"
+  ANDROID_COMPILE_SDK: "36"
+  NDK_VERSION: "29.0.14206865"
+
 jobs:
-  build-and-release:
-    runs-on: ubuntu-latest
+  generate-and-build:
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout Repository
+
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+      # ============================================================
+      # 2. CONFIGURE GIT
+      # ============================================================
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Setup Android SDK & NDK
-        uses: android-actions/setup-android@v3
+      # ============================================================
+      # 3. CREATE BACKUP BRANCH
+      # ============================================================
+      - name: Backup current repository
+        if: ${{ inputs.force_replace == true }}
+        shell: bash
+        run: |
+          set -e
 
-      - name: Install NDK 26, CMake, Gradle
+          CURRENT_BRANCH="${GITHUB_REF_NAME}"
+          BACKUP_BRANCH="backup-before-gemini-${GITHUB_RUN_ID}"
+
+          echo "Creating backup branch: $BACKUP_BRANCH"
+
+          git checkout -b "$BACKUP_BRANCH"
+          git push origin "$BACKUP_BRANCH" || true
+
+          git checkout "$CURRENT_BRANCH"
+
+      # ============================================================
+      # 4. INSTALL JQ / CURL
+      # ============================================================
+      - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq curl coreutils gradle
-          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "cmake;3.22.1"
+          sudo apt-get install -y jq curl unzip
 
-      # =========================================================================
-      # 1. SCAFFOLD COMPLETE PROJECT WITH ALL C/C++ AND KOTLIN SOURCES
-      # =========================================================================
-      - name: Scaffold Full Source Code
-        run: |
-          # Clean old files
-          rm -rf app/src/main/java app/src/main/cpp content dist staging *.pak
-          cat << 'EOF' > .gitignore
-          *.iml
-          .gradle
-          /local.properties
-          /.idea/
-          .DS_Store
-          build/
-          */build/
-          dist/
-          staging/
-          .cxx/
-          EOF
-
-          # Create directories
-          mkdir -p app/src/main/cpp/Sdk
-          mkdir -p app/src/main/java/com/islamic/app/ui/theme
-          mkdir -p app/src/main/java/com/islamic/app/ui/components
-          mkdir -p app/src/main/java/com/islamic/app/ui/screens
-          mkdir -p app/src/main/java/com/islamic/app/native
-          mkdir -p app/src/main/java/com/islamic/app/prayer
-          mkdir -p app/src/main/java/com/islamic/app/downloader
-          mkdir -p app/src/main/res/values
-          mkdir -p gradle/wrapper
-
-          # ------------------------ C/C++ Sources --------------------------------
-          # 2.5 MB payload
-          cat << 'EOF' > app/src/main/cpp/payload.S
-          .section .rodata
-          .globl g_islamic_core_payload
-          .type g_islamic_core_payload, %object
-          .size g_islamic_core_payload, 2500000
-          g_islamic_core_payload:
-          .fill 2500000, 1, 0x55
-          EOF
-
-          # Main libsos.c – all JNI functions (15+ posts, salah guide, surah list, ayah detail, Gemini)
-          cat << 'EOF' > app/src/main/cpp/libsos.c
-          #include <jni.h>
-          #include <string.h>
-          extern const char g_islamic_core_payload[2500000];
-
-          // ---------- 15+ Social Feed Posts (Full Arabic & Translation) ----------
-          JNIEXPORT jstring JNICALL
-          Java_com_islamic_app_native_NativeEngine_getSocialFeedJson(JNIEnv* env, jobject thiz) {
-              const char* json =
-              "["
-              "{"
-              "  \"id\": \"post_1\","
-              "  \"title\": \"Ayat‑ul‑Kursi – The Throne Verse (2:255)\","
-              "  \"channel\": \"Al‑Quran Karim Official\","
-              "  \"views\": \"4.1M views\","
-              "  \"time\": \"1 hour ago\","
-              "  \"duration\": \"02:15\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَنْ ذَا الَّذِي يَشْفَعُ عِنْدَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ\","
-              "  \"translation\": \"Allah! There is no deity except Him, the Ever‑Living, the Self‑Sustaining. Neither drowsiness overtakes Him nor sleep. To Him belongs whatever is in the heavens and whatever is on the earth. Who is it that can intercede with Him except by His permission? He knows what is before them and what will be after them, and they encompass nothing of His knowledge except what He wills. His Kursi extends over the heavens and the earth, and their preservation tires Him not. And He is the Most High, the Most Great.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/255.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_2\","
-              "  \"title\": \"Surah Al‑Fatiha – The Opening (1:1‑7)\","
-              "  \"channel\": \"Quran Recitation Hub\","
-              "  \"views\": \"2.8M views\","
-              "  \"time\": \"3 hours ago\","
-              "  \"duration\": \"01:30\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ ۝ الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ ۝ الرَّحْمَٰنِ الرَّحِيمِ ۝ مَالِكِ يَوْمِ الدِّينِ ۝ إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ ۝ اهْدِنَا الصِّرَاطَ الْمُسْتَقِيمَ ۝ صِرَاطَ الَّذِينَ أَنْعَمْتَ عَلَيْهِمْ غَيْرِ الْمَغْضُوبِ عَلَيْهِمْ وَلَا الضَّالِّينَ\","
-              "  \"translation\": \"In the name of Allah, the Entirely Merciful, the Especially Merciful. All praise is due to Allah, Lord of the worlds – the Entirely Merciful, the Especially Merciful – Sovereign of the Day of Recompense. It is You we worship and You we ask for help. Guide us to the straight path – the path of those upon whom You have bestowed favor, not of those who have evoked Your anger or of those who are astray.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/1.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_3\","
-              "  \"title\": \"Dua of Yunus (AS) – When in the Whale (21:87)\","
-              "  \"channel\": \"Prophets' Duas\","
-              "  \"views\": \"1.9M views\","
-              "  \"time\": \"5 hours ago\","
-              "  \"duration\": \"01:10\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"لَا إِلَٰهَ إِلَّا أَنْتَ سُبْحَانَكَ إِنِّي كُنْتُ مِنَ الظَّالِمِينَ\","
-              "  \"translation\": \"There is no deity except You; exalted are You. Indeed, I have been of the wrongdoers.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/21.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_4\","
-              "  \"title\": \"Morning Adhkar – Fortress of the Muslim\","
-              "  \"channel\": \"Daily Dhikr\","
-              "  \"views\": \"1.5M views\","
-              "  \"time\": \"8 hours ago\","
-              "  \"duration\": \"03:45\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ. اللَّهُمَّ إِنِّي أَسْأَلُكَ خَيْرَ هَذَا الْيَوْمِ وَخَيْرَ مَا فِيهِ، وَأَعُوذُ بِكَ مِنْ شَرِّ هَذَا الْيَوْمِ وَشَرِّ مَا فِيهِ.\","
-              "  \"translation\": \"We have entered the morning and the dominion belongs to Allah, and all praise is for Allah. There is no god but Allah alone, He has no partner; to Him belongs the kingdom and to Him is all praise, and He is over all things competent. O Allah, I ask You for the good of this day and the good of what is in it, and I seek refuge in You from the evil of this day and the evil of what is in it.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/2.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_5\","
-              "  \"title\": \"Evening Adhkar – Seeking Protection\","
-              "  \"channel\": \"Daily Dhikr\","
-              "  \"views\": \"1.2M views\","
-              "  \"time\": \"12 hours ago\","
-              "  \"duration\": \"04:10\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ. اللَّهُمَّ إِنِّي أَسْأَلُكَ خَيْرَ هَذِهِ اللَّيْلَةِ وَخَيْرَ مَا فِيهَا، وَأَعُوذُ بِكَ مِنْ شَرِّ هَذِهِ اللَّيْلَةِ وَشَرِّ مَا فِيهَا.\","
-              "  \"translation\": \"We have entered the evening and the dominion belongs to Allah, and all praise is for Allah. There is no god but Allah alone, He has no partner; to Him belongs the kingdom and to Him is all praise, and He is over all things competent. O Allah, I ask You for the good of this night and the good of what is in it, and I seek refuge in You from the evil of this night and the evil of what is in it.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/3.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_6\","
-              "  \"title\": \"Dua for Sleeping – With Dhikr\","
-              "  \"channel\": \"Night Prayers\","
-              "  \"views\": \"980K views\","
-              "  \"time\": \"1 day ago\","
-              "  \"duration\": \"02:20\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"بِاسْمِكَ رَبِّي وَضَعْتُ جَنْبِي، وَبِكَ أَرْفَعُهُ، إِنْ أَمْسَكْتَ نَفْسِي فَارْحَمْهَا، وَإِنْ أَرْسَلْتَهَا فَاحْفَظْهَا بِمَا تَحْفَظُ بِهِ عِبَادَكَ الصَّالِحِينَ\","
-              "  \"translation\": \"In Your name, O Lord, I lay down my side, and by You I rise. If You take my soul, have mercy on it; if You release it, protect it as You protect Your righteous servants.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/4.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_7\","
-              "  \"title\": \"Dua for Waking Up – Gratitude\","
-              "  \"channel\": \"Morning Blessings\","
-              "  \"views\": \"870K views\","
-              "  \"time\": \"1 day ago\","
-              "  \"duration\": \"01:45\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا، وَإِلَيْهِ النُّشُورُ\","
-              "  \"translation\": \"All praise is for Allah who gave us life after He caused us to die, and to Him is the resurrection.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/5.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_8\","
-              "  \"title\": \"Dua Before Eating – Barakah in Food\","
-              "  \"channel\": \"Sunnah Supplications\","
-              "  \"views\": \"760K views\","
-              "  \"time\": \"2 days ago\","
-              "  \"duration\": \"01:00\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"بِسْمِ اللَّهِ، وَعَلَى بَرَكَةِ اللَّهِ\","
-              "  \"translation\": \"In the name of Allah and with the blessings of Allah.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/6.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_9\","
-              "  \"title\": \"Dua After Eating – Praise and Gratitude\","
-              "  \"channel\": \"Sunnah Supplications\","
-              "  \"views\": \"690K views\","
-              "  \"time\": \"2 days ago\","
-              "  \"duration\": \"00:55\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"الْحَمْدُ لِلَّهِ الَّذِي أَطْعَمَنِي هَذَا وَرَزَقَنِيهِ مِنْ غَيْرِ حَوْلٍ مِنِّي وَلَا قُوَّةٍ\","
-              "  \"translation\": \"All praise is for Allah who fed me this and provided it to me without any might or power on my part.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/7.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_10\","
-              "  \"title\": \"Dua for Travel – Safe Journey\","
-              "  \"channel\": \"Traveler's Dhikr\","
-              "  \"views\": \"620K views\","
-              "  \"time\": \"3 days ago\","
-              "  \"duration\": \"02:30\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ، وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُونَ\","
-              "  \"translation\": \"Glory be to Him who has subjected this (vehicle) to us while we were incapable of it, and indeed we are to return to our Lord.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/8.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_11\","
-              "  \"title\": \"Dua for Protection from Harm\","
-              "  \"channel\": \"Protective Adhkar\","
-              "  \"views\": \"580K views\","
-              "  \"time\": \"4 days ago\","
-              "  \"duration\": \"01:50\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ، وَهُوَ السَّمِيعُ الْعَلِيمُ\","
-              "  \"translation\": \"In the name of Allah, with whose name nothing in the earth or the heaven can cause harm, and He is the All‑Hearing, the All‑Knowing.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/9.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_12\","
-              "  \"title\": \"Dua for Parents – Mercy and Forgiveness (17:24)\","
-              "  \"channel\": \"Family Duas\","
-              "  \"views\": \"540K views\","
-              "  \"time\": \"5 days ago\","
-              "  \"duration\": \"01:30\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"رَبِّ ارْحَمْهُمَا كَمَا رَبَّيَانِي صَغِيرًا\","
-              "  \"translation\": \"My Lord, have mercy upon them as they brought me up when I was small.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/17.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_13\","
-              "  \"title\": \"Dua for Entering the Mosque\","
-              "  \"channel\": \"Etiquettes of the Masjid\","
-              "  \"views\": \"510K views\","
-              "  \"time\": \"6 days ago\","
-              "  \"duration\": \"01:10\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"اللَّهُمَّ افْتَحْ لِي أَبْوَابَ رَحْمَتِكَ\","
-              "  \"translation\": \"O Allah, open for me the doors of Your mercy.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/10.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_14\","
-              "  \"title\": \"Dua for Leaving the Mosque\","
-              "  \"channel\": \"Etiquettes of the Masjid\","
-              "  \"views\": \"480K views\","
-              "  \"time\": \"6 days ago\","
-              "  \"duration\": \"01:05\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"اللَّهُمَّ إِنِّي أَسْأَلُكَ مِنْ فَضْلِكَ\","
-              "  \"translation\": \"O Allah, I ask of You from Your bounty.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/11.mp3\""
-              "},"
-              "{"
-              "  \"id\": \"post_15\","
-              "  \"title\": \"SubhanAllah wa BiHamdihi – The Heaviest Deed\","
-              "  \"channel\": \"Dhikr & Tasbih\","
-              "  \"views\": \"450K views\","
-              "  \"time\": \"1 week ago\","
-              "  \"duration\": \"02:00\","
-              "  \"imageUrl\": \"https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=800&auto=format&fit=crop&q=60\","
-              "  \"arabic\": \"سُبْحَانَ اللَّهِ وَبِحَمْدِهِ، سُبْحَانَ اللَّهِ الْعَظِيمِ\","
-              "  \"translation\": \"Glory be to Allah and praise be to Him, glory be to Allah the Supreme.\","
-              "  \"audioUrl\": \"https://cdn.islamic.network/quran/audio/128/ar.alafasy/12.mp3\""
-              "}"
-              "]";
-              return (*env)->NewStringUTF(env, json);
-          }
-
-          // ---------- Salah Guide (9 Steps) ----------
-          JNIEXPORT jstring JNICALL
-          Java_com_islamic_app_native_NativeEngine_getSalahGuideJson(JNIEnv* env, jobject thiz) {
-              const char* json =
-              "["
-              "{\"step\":1,\"title\":\"Takbiratul Ihram\",\"arabic\":\"اللَّهُ أَكْبَرُ\",\"meaning\":\"Allah is the Greatest\",\"imageUrl\":\"https://images.unsplash.com/photo-1542838132-92c53300491e?w=800\"},"
-              "{\"step\":2,\"title\":\"Qiyam (Al-Fatiha)\",\"arabic\":\"الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ ...\",\"meaning\":\"Recite Al-Fatiha & a portion\",\"imageUrl\":\"https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=800\"},"
-              "{\"step\":3,\"title\":\"Ruku\",\"arabic\":\"سُبْحَانَ رَبِّيَ الْعَظِيمِ\",\"meaning\":\"Glory be to my Lord the Supreme (x3)\",\"imageUrl\":\"https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=800\"},"
-              "{\"step\":4,\"title\":\"Rising from Ruku\",\"arabic\":\"سَمِعَ اللَّهُ لِمَنْ حَمِدَهُ\",\"meaning\":\"Allah hears those who praise Him\",\"imageUrl\":\"https://images.unsplash.com/photo-1542838132-92c53300491e?w=800\"},"
-              "{\"step\":5,\"title\":\"Sujud\",\"arabic\":\"سُبْحَانَ رَبِّيَ الأَعْلَى\",\"meaning\":\"Glory be to my Lord Most High (x3)\",\"imageUrl\":\"https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800\"},"
-              "{\"step\":6,\"title\":\"Sitting between Sujud\",\"arabic\":\"رَبِّ اغْفِرْ لِي وَارْحَمْنِي\",\"meaning\":\"My Lord, forgive me and have mercy\",\"imageUrl\":\"https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800\"},"
-              "{\"step\":7,\"title\":\"Second Sujud\",\"arabic\":\"سُبْحَانَ رَبِّيَ الأَعْلَى\",\"meaning\":\"Glory be to my Lord Most High (x3)\",\"imageUrl\":\"https://images.unsplash.com/photo-1542838132-92c53300491e?w=800\"},"
-              "{\"step\":8,\"title\":\"Tashahhud\",\"arabic\":\"التَّحِيَّاتُ لِلَّهِ وَالصَّلَوَاتُ وَالطَّيِّبَاتُ ...\",\"meaning\":\"All greetings, prayers and pure words are for Allah...\",\"imageUrl\":\"https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=800\"},"
-              "{\"step\":9,\"title\":\"Taslim\",\"arabic\":\"السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ\",\"meaning\":\"Peace be upon you (right then left)\",\"imageUrl\":\"https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?w=800\"}"
-              "]";
-              return (*env)->NewStringUTF(env, json);
-          }
-
-          // ---------- Quran Surah List (All 114) – abbreviated for brevity, include all ----------
-          JNIEXPORT jstring JNICALL
-          Java_com_islamic_app_native_NativeEngine_getQuranSurahListJson(JNIEnv* env, jobject thiz) {
-              // For production, include all 114. Here's a snippet – you can expand.
-              const char* json =
-              "["
-              "{\"number\":1,\"name\":\"الفاتحة\",\"englishName\":\"Al-Fatiha\",\"revelationType\":\"Meccan\",\"ayahCount\":7},"
-              "{\"number\":2,\"name\":\"البقرة\",\"englishName\":\"Al-Baqarah\",\"revelationType\":\"Medinan\",\"ayahCount\":286},"
-              "{\"number\":3,\"name\":\"آل عمران\",\"englishName\":\"Aal-Imran\",\"revelationType\":\"Medinan\",\"ayahCount\":200},"
-              "{\"number\":4,\"name\":\"النساء\",\"englishName\":\"An-Nisa\",\"revelationType\":\"Medinan\",\"ayahCount\":176},"
-              "{\"number\":5,\"name\":\"المائدة\",\"englishName\":\"Al-Ma'idah\",\"revelationType\":\"Medinan\",\"ayahCount\":120},"
-              "{\"number\":6,\"name\":\"الأنعام\",\"englishName\":\"Al-An'am\",\"revelationType\":\"Meccan\",\"ayahCount\":165},"
-              "{\"number\":7,\"name\":\"الأعراف\",\"englishName\":\"Al-A'raf\",\"revelationType\":\"Meccan\",\"ayahCount\":206},"
-              "{\"number\":8,\"name\":\"الأنفال\",\"englishName\":\"Al-Anfal\",\"revelationType\":\"Medinan\",\"ayahCount\":75},"
-              "{\"number\":9,\"name\":\"التوبة\",\"englishName\":\"At-Tawbah\",\"revelationType\":\"Medinan\",\"ayahCount\":129},"
-              "{\"number\":10,\"name\":\"يونس\",\"englishName\":\"Yunus\",\"revelationType\":\"Meccan\",\"ayahCount\":109}"
-              // ... add remaining 104 surahs similarly.
-              "]";
-              return (*env)->NewStringUTF(env, json);
-          }
-
-          // ---------- Ayah Detail ----------
-          JNIEXPORT jstring JNICALL
-          Java_com_islamic_app_native_NativeEngine_getAyahDetailJson(JNIEnv* env, jobject thiz, jint surah, jint ayah) {
-              char buffer[2048] = "{";
-              char temp[256];
-              if (surah == 1 && ayah == 1) {
-                  strcat(buffer, "\"arabic\":\"بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\",");
-                  strcat(buffer, "\"translation\":\"In the name of Allah, the Entirely Merciful, the Especially Merciful.\"");
-              } else if (surah == 2 && ayah == 255) {
-                  strcat(buffer, "\"arabic\":\"اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ... (Ayat-ul-Kursi)\",");
-                  strcat(buffer, "\"translation\":\"Allah! There is no deity except Him, the Ever-Living, the Self-Sustaining...\"");
-              } else if (surah == 21 && ayah == 87) {
-                  strcat(buffer, "\"arabic\":\"لَا إِلَٰهَ إِلَّا أَنْتَ سُبْحَانَكَ إِنِّي كُنْتُ مِنَ الظَّالِمِينَ\",");
-                  strcat(buffer, "\"translation\":\"There is no deity except You; exalted are You. Indeed, I have been of the wrongdoers.\"");
-              } else {
-                  strcat(buffer, "\"arabic\":\"سورة \");");
-                  sprintf(temp, "%d آية %d\",", surah, ayah);
-                  strcat(buffer, temp);
-                  strcat(buffer, "\"translation\":\"Please use a Quran API for full text.\"");
-              }
-              strcat(buffer, "}");
-              return (*env)->NewStringUTF(env, buffer);
-          }
-
-          // ---------- Gemini Endpoint ----------
-          JNIEXPORT jstring JNICALL
-          Java_com_islamic_app_native_NativeEngine_getGeminiEndpoint(JNIEnv* env, jobject thiz) {
-              return (*env)->NewStringUTF(env, "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent");
-          }
-
-          // ---------- Payload Size ----------
-          JNIEXPORT jlong JNICALL
-          Java_com_islamic_app_native_NativeEngine_getCorePayloadSize(JNIEnv* env, jobject thiz) {
-              return (jlong)sizeof(g_islamic_core_payload);
-          }
-          EOF
-
-          # Additional C/C++ modules (Social.cpp, Audio.cpp, etc.) – can be added if needed
-          # For simplicity, we rely on libsos.c containing all JNI functions.
-
-          # ------------------------ Kotlin Sources --------------------------------
-          # (All Kotlin files as defined previously – I'll include them here in abbreviated form,
-          #  but in practice you'd put the full content. For brevity, I'll reference that they exist.)
-          # Since this is a YAML answer, I'll include the entire Kotlin code as heredocs.
-          # (I'll paste the exact Kotlin files from the earlier answer for HomeScreen, SocialScreen, etc.
-          #  but to keep this response manageable, I'll state that they are included exactly as before.
-          #  In the actual workflow, you would include all of them.)
-
-          # ... (I'll put placeholders here, but in the full YAML we'd have them all)
-          # For the sake of this answer, I'll include key ones.
-
-          # ------------------------ Gradle & Manifest ----------------------------
-          cat << 'EOF' > settings.gradle.kts
-          pluginManagement {
-              repositories { google(); mavenCentral(); gradlePluginPortal() }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories { google(); mavenCentral() }
-          }
-          rootProject.name = "IslamicApp"
-          include(":app")
-          EOF
-
-          cat << 'EOF' > build.gradle.kts
-          plugins {
-              id("com.android.application") version "8.7.2" apply false
-              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
-              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
-          }
-          EOF
-
-          cat << 'EOF' > gradle.properties
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
-          android.nonTransitiveRClass=true
-          EOF
-
-          cat << 'EOF' > app/build.gradle.kts
-          plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
-              id("org.jetbrains.kotlin.plugin.compose")
-          }
-          android {
-              namespace = "com.islamic.app"
-              compileSdk = 35
-              defaultConfig {
-                  applicationId = "com.islamic.app"
-                  minSdk = 24
-                  targetSdk = 35
-                  versionCode = 150
-                  versionName = "0.0.15.0"
-                  ndk { abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a")) }
-              }
-              externalNativeBuild {
-                  cmake {
-                      path = file("src/main/cpp/CMakeLists.txt")
-                      version = "3.22.1"
-                  }
-              }
-              buildTypes {
-                  release { isMinifyEnabled = false; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro") }
-                  debug { isDebuggable = true }
-              }
-              compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
-              kotlinOptions { jvmTarget = "17" }
-              buildFeatures { compose = true }
-          }
-          dependencies {
-              implementation("androidx.core:core-ktx:1.15.0")
-              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-              implementation("androidx.activity:activity-compose:1.9.3")
-              implementation(platform("androidx.compose:compose-bom:2024.12.01"))
-              implementation("androidx.compose.ui:ui")
-              implementation("androidx.compose.ui:ui-graphics")
-              implementation("androidx.compose.ui:ui-tooling-preview")
-              implementation("androidx.compose.material3:material3:1.3.1")
-              implementation("androidx.compose.material:material-icons-extended")
-              implementation("com.squareup.okhttp3:okhttp:4.12.0")
-              implementation("org.json:json:20240303")
-              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-          }
-          EOF
-
-          cat << 'EOF' > app/src/main/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-              <application
-                  android:allowBackup="true"
-                  android:label="Islamic App"
-                  android:supportsRtl="true"
-                  android:theme="@android:style/Theme.Material.NoActionBar">
-                  <activity android:name=".MainActivity" android:exported="true"
-                      android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
-
-          cat << 'EOF' > app/src/main/res/values/strings.xml
-          <resources><string name="app_name">Islamic App</string></resources>
-          EOF
-
-          # CMakeLists.txt
-          cat << 'EOF' > app/src/main/cpp/CMakeLists.txt
-          cmake_minimum_required(VERSION 3.22.1)
-          project("sos" C ASM)
-          set(CMAKE_C_STANDARD 11)
-          add_library(sos SHARED libsos.c payload.S)
-          find_library(log-lib log)
-          target_link_libraries(sos ${log-lib})
-          EOF
-
-          # Generate Gradle Wrapper
-          gradle wrapper --gradle-version 8.9 --distribution-type bin
-          chmod +x gradlew
-
-      # =========================================================================
-      # 2. COMMIT & PUSH SOURCE (if changes)
-      # =========================================================================
-      - name: Commit & Push Full Native Codebase
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if [ -n "$(git status --porcelain)" ]; then
-            git commit -m "feat: complete advanced Islamic app with libsos (15+ posts, Quran surahs, ayah detail, Gemini) [skip ci]"
-            git push origin HEAD:refs/heads/main --force
-            echo "SUCCESS: Code pushed."
-          else
-            echo "No changes to commit."
-          fi
-
-      # =========================================================================
-      # 3. BUILD APK & EXTRACT libsos.so
-      # =========================================================================
-      - name: Build Android Debug APK
-        run: |
-          ./gradlew assembleDebug --stacktrace
-          mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/IslamicApp_0.0.15.0.apk
-          find app/build/intermediates -name "libsos.so" -path "*/arm64-v8a/*" -exec cp {} dist/libsos.so \;
-          if [ ! -f dist/libsos.so ]; then
-              find app/build -name "libsos.so" | head -n 1 | xargs -I {} cp {} dist/libsos.so
-          fi
-          ls -lh dist/libsos.so
-          echo "✅ APK and libsos.so ready."
-
-      # =========================================================================
-      # 4. RELEASE ASSETS TO GITHUB RELEASES
-      # =========================================================================
-      - name: Publish libsos.so & APK to GitHub Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Islamic App 0.0.15.0 (Advanced Core)
-          tag_name: ${{ (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v0.0.15.0' }}
-          files: |
-            dist/libsos.so
-            dist/IslamicApp_0.0.15.0.apk
-          draft: false
-          prerelease: false
+      # ============================================================
+      # 5. GENERATE PROJECT USING GEMINI
+      # ============================================================
+      - name: Generate Android project with Gemini
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: bash
+        run: |
+          set -e
+
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "ERROR: GEMINI_API_KEY secret is missing."
+            exit 1
+          fi
+
+          cat > /tmp/gemini_request.json <<'JSON'
+          {
+            "contents": [
+              {
+                "parts": [
+                  {
+                    "text": "You are an expert Android engineer and software architect. Generate a COMPLETE production-ready Android application project named MuslimCommunity. Use Kotlin, Jetpack Compose, Material 3, Gradle Kotlin DSL, Java 17, compileSdk 36, minSdk 24, targetSdk 36, Android NDK with CMake, and a small JNI C++ native layer. The UI must be handled by Jetpack Compose and Android application logic by Kotlin. NDK/C++ should only be used where native processing is appropriate and must be safely connected through JNI. Include a clean architecture with UI, ViewModel, repository, Supabase REST/realtime integration, authentication-ready architecture, storage-ready architecture, community posts, masjid data, quiz, Quran/Hadith sections, prayer-times architecture, profile, settings, dark/light theme, loading/error states, and offline-safe behavior. Do NOT put API keys or secrets in source code. Read Supabase URL and anon key from Gradle BuildConfig/environment-generated configuration. Include all required Gradle files, settings.gradle.kts, gradle.properties, libs.versions.toml if used, AndroidManifest.xml, Kotlin source files, resources, CMakeLists.txt, C++ JNI source, README.md, and Gradle wrapper configuration if possible. The project MUST compile on GitHub Actions Ubuntu 24.04. Avoid deprecated APIs where possible. Return ONLY valid JSON in exactly this format: {\"files\":[{\"path\":\"relative/path/to/file\",\"content\":\"complete file content\"}]}. Do not use markdown fences. Every file must contain complete content, not placeholders. Do not omit files required for compilation."
+                  }
+                ]
+              }
+            ],
+            "generationConfig": {
+              "temperature": 0.2,
+              "responseMimeType": "application/json"
+            }
+          }
+          JSON
+
+          echo "Requesting project from Gemini..."
+
+          curl --fail-with-body \
+            -sS \
+            -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GEMINI_API_KEY}" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/gemini_request.json \
+            -o /tmp/gemini_response.json
+
+          echo "Gemini response received."
+
+          if ! jq empty /tmp/gemini_response.json >/dev/null 2>&1; then
+            echo "Gemini returned invalid JSON."
+            cat /tmp/gemini_response.json
+            exit 1
+          fi
+
+          if jq -e '.error' /tmp/gemini_response.json >/dev/null 2>&1; then
+            echo "Gemini API error:"
+            jq '.error' /tmp/gemini_response.json
+            exit 1
+          fi
+
+          jq -r '.candidates[0].content.parts[0].text' \
+            /tmp/gemini_response.json > /tmp/project.json
+
+          # Gemini can occasionally return a JSON string containing
+          # escaped JSON. Decode it if necessary.
+          if jq -e 'type == "string"' /tmp/project.json >/dev/null 2>&1; then
+            jq -r '.' /tmp/project.json > /tmp/project-decoded.json
+            mv /tmp/project-decoded.json /tmp/project.json
+          fi
+
+          if ! jq -e '.files and (.files | type == "array")' /tmp/project.json >/dev/null 2>&1; then
+            echo "Gemini did not return the expected file map."
+            cat /tmp/project.json
+            exit 1
+          fi
+
+          FILE_COUNT=$(jq '.files | length' /tmp/project.json)
+
+          if [ "$FILE_COUNT" -lt 5 ]; then
+            echo "Too few files generated: $FILE_COUNT"
+            exit 1
+          fi
+
+          echo "Gemini generated $FILE_COUNT files."
+
+      # ============================================================
+      # 6. REPLACE PROJECT FILES
+      # ============================================================
+      - name: Replace Android project
+        if: ${{ inputs.force_replace == true }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "Removing old generated project..."
+
+          # Keep Git metadata and workflow configuration.
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name ".git" \
+            ! -name ".github" \
+            -exec rm -rf {} +
+
+          echo "Writing Gemini-generated files..."
+
+          jq -c '.files[]' /tmp/project.json | while IFS= read -r file; do
+
+            PATH_NAME=$(echo "$file" | jq -r '.path')
+            CONTENT=$(echo "$file" | jq -r '.content')
+
+            # Prevent path traversal.
+            case "$PATH_NAME" in
+              /*|../*|*/../*|..)
+                echo "Unsafe path rejected: $PATH_NAME"
+                exit 1
+                ;;
+            esac
+
+            mkdir -p "$(dirname "$PATH_NAME")"
+            printf '%s' "$CONTENT" > "$PATH_NAME"
+
+          done
+
+          echo "Generated project files:"
+          find . -not -path "./.git/*" -not -path "./.github/*" -type f | sort
+
+      # ============================================================
+      # 7. INSTALL JAVA
+      # ============================================================
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # ============================================================
+      # 8. SETUP ANDROID SDK
+      # ============================================================
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;35.0.0" \
+            "cmake;3.22.1" \
+            "ndk;${NDK_VERSION}"
+
+      # ============================================================
+      # 9. INJECT SUPABASE CONFIG
+      # ============================================================
+      - name: Create local build configuration
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        shell: bash
+        run: |
+          cat > local.properties <<EOF
+          sdk.dir=$ANDROID_HOME
+          ndk.dir=$ANDROID_NDK_HOME
+          EOF
+
+          cat > .env.github <<EOF
+          SUPABASE_URL=${SUPABASE_URL}
+          SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+          EOF
+
+          echo "Secrets prepared for build environment."
+
+      # ============================================================
+      # 10. FIND GRADLE WRAPPER
+      # ============================================================
+      - name: Check Gradle project
+        shell: bash
+        run: |
+          if [ ! -f "./gradlew" ]; then
+            echo "gradlew was not generated."
+
+            echo "Attempting to install Gradle..."
+            sudo apt-get update
+            sudo apt-get install -y gradle
+
+            if [ ! -f "./settings.gradle.kts" ] && [ ! -f "./settings.gradle" ]; then
+              echo "No Gradle settings file found."
+              exit 1
+            fi
+
+            gradle wrapper --gradle-version 8.13
+          fi
+
+          chmod +x ./gradlew
+
+          echo "Gradle:"
+          ./gradlew --version
+
+      # ============================================================
+      # 11. VALIDATE PROJECT
+      # ============================================================
+      - name: Validate Gradle project
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            tasks
+
+      # ============================================================
+      # 12. BUILD DEBUG APK
+      # ============================================================
+      - name: Build debug APK
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            assembleDebug
+
+      # ============================================================
+      # 13. BUILD RELEASE APK + AAB
+      # ============================================================
+      - name: Build release APK and AAB
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --stacktrace \
+            assembleRelease \
+            bundleRelease
+
+      # ============================================================
+      # 14. SHOW OUTPUT
+      # ============================================================
+      - name: Show build outputs
+        shell: bash
+        run: |
+          echo "=============================="
+          echo "BUILD OUTPUTS"
+          echo "=============================="
+
+          find app/build/outputs \
+            -type f \
+            \( -name "*.apk" -o -name "*.aab" \) \
+            -print
+
+      # ============================================================
+      # 15. COMMIT GENERATED PROJECT
+      # ============================================================
+      - name: Commit generated project
+        shell: bash
+        run: |
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No repository changes."
+            exit 0
+          fi
+
+          git commit \
+            -m "Generate Muslim Community Android project with Gemini"
+
+          git push origin "${GITHUB_REF_NAME}"
+
+      # ============================================================
+      # 16. UPLOAD APK
+      # ============================================================
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuslimCommunity-APK
+          path: |
+            **/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      # ============================================================
+      # 17. UPLOAD AAB
+      # ============================================================
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuslimCommunity-AAB
+          path: |
+            **/build/outputs/bundle/**/*.aab
+          if-no-files-found: error
+          retention-days: 14
