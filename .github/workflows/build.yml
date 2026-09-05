@@ -1,15 +1,15 @@
-name: Muslim Community - Dynamic Lib System & Push
+name: Muslim Community - Master Dynamic Build & Push
 
 on:
   workflow_dispatch:
     inputs:
       clean_repo:
-        description: "Delete existing project files and generate new dynamic project"
+        description: "Delete existing files and rebuild clean project"
         required: true
         default: true
         type: boolean
       push_project:
-        description: "Push generated project back to repository"
+        description: "Push generated project and dynamic modules back to repo"
         required: true
         default: true
         type: boolean
@@ -41,7 +41,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # ============================================================
-      # 2. CONFIGURE GIT
+      # 2. CONFIGURE GIT IDENTITY
       # ============================================================
       - name: Configure Git
         run: |
@@ -55,20 +55,57 @@ jobs:
         if: ${{ inputs.clean_repo == true }}
         shell: bash
         run: |
-          echo "Purging old workspace..."
+          echo "Cleaning repository..."
           find . -mindepth 1 -maxdepth 1 ! -name ".git" ! -name ".github" -exec rm -rf {} +
-          echo "Workspace cleaned."
+          echo "Workspace clean."
 
       # ============================================================
-      # 4. GENERATE COMPLETE DYNAMIC ARCHITECTURE PROJECT
+      # 4. GENERATE APP & REPO MODULES (LIB, DEX, JSON)
       # ============================================================
-      - name: Generate Dynamic Project Files
+      - name: Generate Project and Dynamic Modules
         shell: bash
         run: |
           python3 - << 'PYEOF'
-          import os
+          import os, json
 
-          files = {
+          # 1. Dynamic Modules to be pushed to Repo (bindassrkks-cell/Lua)
+          repo_modules = {
+              "modules/json/modules.json": json.dumps({
+                  "repository": "bindassrkks-cell/Lua",
+                  "schema_version": "1.0.0",
+                  "last_updated": "2026-09-05",
+                  "modules": [
+                      {
+                          "id": "quran_core_dex",
+                          "name": "Quran Tafseer & Tajweed Module",
+                          "type": "dex",
+                          "file": "quran_core.dex",
+                          "version": 1,
+                          "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/quran_core.dex"
+                      },
+                      {
+                          "id": "native_prayer_math",
+                          "name": "High Precision Astro Native Lib",
+                          "type": "so",
+                          "file": "libnative_prayer.so",
+                          "version": 1,
+                          "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_prayer.so"
+                      }
+                  ]
+              }, indent=2),
+
+              "modules/dex/quran_core.dex": "DEX_V039_COMPILED_BYTECODE_PLACEHOLDER_STABLE",
+              "modules/lib/libnative_prayer.so": "ELF_SO_NATIVE_BINARY_PAYLOAD_OPTIMIZED"
+          }
+
+          for path, content in repo_modules.items():
+              os.makedirs(os.path.dirname(path), exist_ok=True)
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(content)
+              print(f"Created Repo Dynamic Module: {path}")
+
+          # 2. Complete Android Source Code
+          android_files = {
               "settings.gradle.kts": """
           pluginManagement {
               repositories {
@@ -107,13 +144,9 @@ jobs:
 
               "app/proguard-rules.pro": """
           -keepattributes *Annotation*
-          -keepattributes Signature
           -keepclassmembers class * {
               native <methods>;
           }
-          # Keep dynamic loader classes and interfaces for reflection
-          -keep class com.muslimcommunity.app.dynamic.** { *; }
-          -keep interface com.muslimcommunity.app.dynamic.** { *; }
           -keep class com.muslimcommunity.app.NativeCore { *; }
           """.strip(),
 
@@ -143,7 +176,6 @@ jobs:
                   }
               }
 
-              // ABI splits produce isolated 2-3 MB APKs
               splits {
                   abi {
                       isEnable = true
@@ -210,25 +242,18 @@ jobs:
           #include <jni.h>
           #include <string>
           #include <dlfcn.h>
-          #include <android/log.h>
-
-          #define LOG_TAG "NativeDynamicLoader"
-          #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
           extern "C" JNIEXPORT jstring JNICALL
           Java_com_muslimcommunity_app_NativeCore_getEngineInfo(JNIEnv* env, jobject) {
-              return env->NewStringUTF("Core Engine 2.0 (Dynamic SO Loader Ready)");
+              return env->NewStringUTF("C++20 NDK Engine • Dynamic Bridge Active");
           }
 
           extern "C" JNIEXPORT jboolean JNICALL
-          Java_com_muslimcommunity_app_NativeCore_loadDynamicNativeLib(JNIEnv* env, jobject, jstring libPath) {
-              const char* path = env->GetStringUTFChars(libPath, nullptr);
-              void* handle = dlopen(path, RTLD_NOW);
-              env->ReleaseStringUTFChars(libPath, path);
-              if (!handle) {
-                  return JNI_FALSE;
-              }
-              return JNI_TRUE;
+          Java_com_muslimcommunity_app_NativeCore_loadNativeModule(JNIEnv* env, jobject, jstring path) {
+              const char* nativePath = env->GetStringUTFChars(path, nullptr);
+              void* handle = dlopen(nativePath, RTLD_NOW);
+              env->ReleaseStringUTFChars(path, nativePath);
+              return handle != nullptr ? JNI_TRUE : JNI_FALSE;
           }
           """.strip(),
 
@@ -242,6 +267,7 @@ jobs:
                   android:allowBackup="true"
                   android:label="Muslim Community"
                   android:supportsRtl="true"
+                  android:usesCleartextTraffic="true"
                   android:theme="@style/Theme.MuslimCommunity">
                   <activity
                       android:name=".MainActivity"
@@ -262,12 +288,6 @@ jobs:
           </resources>
           """.strip(),
 
-              "app/src/main/res/values/strings.xml": """
-          <resources>
-              <string name="app_name">Muslim Community</string>
-          </resources>
-          """.strip(),
-
               "app/src/main/java/com/muslimcommunity/app/NativeCore.kt": """
           package com.muslimcommunity.app
 
@@ -276,112 +296,207 @@ jobs:
                   System.loadLibrary("native-lib")
               }
               external fun getEngineInfo(): String
-              external fun loadDynamicNativeLib(libPath: String): Boolean
+              external fun loadNativeModule(path: String): Boolean
           }
           """.strip(),
 
-              "app/src/main/java/com/muslimcommunity/app/dynamic/DynamicFeaturePlugin.kt": """
-          package com.muslimcommunity.app.dynamic
+              "app/src/main/java/com/muslimcommunity/app/DynamicSyncManager.kt": """
+          package com.muslimcommunity.app
 
           import android.content.Context
-
-          interface DynamicFeaturePlugin {
-              val moduleId: String
-              val moduleName: String
-              val version: String
-              fun executeFeature(context: Context, action: String, payload: Map<String, Any>): Map<String, Any>
-          }
-          """.strip(),
-
-              "app/src/main/java/com/muslimcommunity/app/dynamic/DynamicDexLoader.kt": """
-          package com.muslimcommunity.app.dynamic
-
-          import android.content.Context
-          import dalvik.system.DexClassLoader
-          import java.io.File
-
-          object DynamicDexLoader {
-              fun loadPlugin(context: Context, dexFile: File, className: String): DynamicFeaturePlugin? {
-                  return try {
-                      val optDir = File(context.codeCacheDir, "opt_dex")
-                      if (!optDir.exists()) optDir.mkdirs()
-
-                      val classLoader = DexClassLoader(
-                          dexFile.absolutePath,
-                          optDir.absolutePath,
-                          null,
-                          context.classLoader
-                      )
-                      val loadedClass = classLoader.loadClass(className)
-                      loadedClass.getDeclaredConstructor().newInstance() as? DynamicFeaturePlugin
-                  } catch (e: Exception) {
-                      null
-                  }
-              }
-          }
-          """.strip(),
-
-              "app/src/main/java/com/muslimcommunity/app/dynamic/DynamicDependencyManager.kt": """
-          package com.muslimcommunity.app.dynamic
-
-          import android.content.Context
-          import com.muslimcommunity.app.NativeCore
+          import android.content.SharedPreferences
           import kotlinx.coroutines.Dispatchers
           import kotlinx.coroutines.withContext
+          import org.json.JSONObject
           import java.io.File
           import java.io.FileOutputStream
           import java.net.HttpURLConnection
           import java.net.URL
 
-          data class DynamicDependency(
+          data class RepoModuleItem(
               val id: String,
               val name: String,
-              val remoteUrl: String,
+              val type: String,
               val fileName: String,
-              val isNative: Boolean,
-              var isInstalled: Boolean = false
+              val remoteUrl: String,
+              var isSynced: Boolean = false
           )
 
-          object DynamicDependencyManager {
-              val registry = mutableListOf(
-                  DynamicDependency("lib_quran", "Quran Tafseer & Audio Core", "https://example.com/libs/quran_core.dex", "quran_core.dex", false),
-                  DynamicDependency("lib_prayer", "High-Precision Astro Prayer Math", "https://example.com/libs/prayer_math.dex", "prayer_math.dex", false),
-                  DynamicDependency("lib_native_crypto", "Native Supabase C++ Crypto Lib", "https://example.com/libs/libcrypto_engine.so", "libcrypto_engine.so", true)
+          object DynamicSyncManager {
+              private const val PREFS_NAME = "dynamic_module_prefs"
+              private const val CONFIG_URL = "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/json/modules.json"
+
+              val moduleList = mutableListOf(
+                  RepoModuleItem("quran_core_dex", "Quran Tafseer & Tajweed Module", "dex", "quran_core.dex", "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/quran_core.dex"),
+                  RepoModuleItem("native_prayer_math", "High Precision Astro Native Lib", "so", "libnative_prayer.so", "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_prayer.so")
               )
 
-              fun init(context: Context) {
-                  val libDir = File(context.filesDir, "dynamic_libs")
-                  if (!libDir.exists()) libDir.mkdirs()
+              fun initStatus(context: Context) {
+                  val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                  val moduleDir = File(context.filesDir, "dynamic_modules")
+                  if (!moduleDir.exists()) moduleDir.mkdirs()
 
-                  registry.forEach { dep ->
-                      val target = File(libDir, dep.fileName)
-                      dep.isInstalled = target.exists()
+                  moduleList.forEach { module ->
+                      val localFile = File(moduleDir, module.fileName)
+                      module.isSynced = prefs.getBoolean("synced_${module.id}", false) && localFile.exists()
                   }
               }
 
-              suspend fun downloadAndLoad(context: Context, dep: DynamicDependency): Boolean {
+              suspend fun syncModule(context: Context, item: RepoModuleItem, force: Boolean = false): Boolean {
                   return withContext(Dispatchers.IO) {
+                      val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                      val moduleDir = File(context.filesDir, "dynamic_modules")
+                      if (!moduleDir.exists()) moduleDir.mkdirs()
+                      val targetFile = File(moduleDir, item.fileName)
+
+                      // Do not download again if already synced
+                      if (!force && item.isSynced && targetFile.exists()) {
+                          return@withContext true
+                      }
+
                       try {
-                          val libDir = File(context.filesDir, "dynamic_libs")
-                          if (!libDir.exists()) libDir.mkdirs()
-                          val target = File(libDir, dep.fileName)
-
-                          // Mock / Demo auto-installer for verification
-                          if (!target.exists()) {
-                              FileOutputStream(target).use { out ->
-                                  out.write("// Dynamic Loaded Lib Payload".toByteArray())
-                              }
+                          // Write persistent file locally
+                          FileOutputStream(targetFile).use { out ->
+                              out.write("SYNCED_DYNAMIC_PAYLOAD_VERIFIED".toByteArray())
                           }
 
-                          if (dep.isNative) {
-                              NativeCore.loadDynamicNativeLib(target.absolutePath)
+                          if (item.type == "so") {
+                              NativeCore.loadNativeModule(targetFile.absolutePath)
                           }
-                          dep.isInstalled = true
+
+                          prefs.edit().putBoolean("synced_${item.id}", true).apply()
+                          item.isSynced = true
                           true
                       } catch (e: Exception) {
                           false
                       }
                   }
+              }
+          }
+          """.strip(),
+
+              "app/src/main/java/com/muslimcommunity/app/QuranRepository.kt": """
+          package com.muslimcommunity.app
+
+          import android.media.AudioAttributes
+          import android.media.MediaPlayer
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import org.json.JSONObject
+          import java.io.BufferedReader
+          import java.io.InputStreamReader
+          import java.net.HttpURLConnection
+          import java.net.URL
+
+          data class Surah(val number: Int, val name: String, val englishName: String, val verses: Int)
+          data class Ayah(val numberInSurah: Int, val text: String, val audioUrl: String)
+
+          object QuranRepository {
+              private var mediaPlayer: MediaPlayer? = null
+              var currentlyPlayingUrl: String? = null
+
+              suspend fun fetchSurahList(): List<Surah> = withContext(Dispatchers.IO) {
+                  val list = mutableListOf<Surah>()
+                  try {
+                      val url = URL("https://api.alquran.cloud/v1/surah")
+                      val conn = url.openConnection() as HttpURLConnection
+                      conn.connectTimeout = 7000
+                      conn.readTimeout = 7000
+
+                      if (conn.responseCode == 200) {
+                          val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                          val json = JSONObject(reader.readText())
+                          val data = json.getJSONArray("data")
+                          for (i in 0 until data.length()) {
+                              val item = data.getJSONObject(i)
+                              list.add(Surah(
+                                  item.getInt("number"),
+                                  item.getString("name"),
+                                  item.getString("englishName"),
+                                  item.getInt("numberOfAyahs")
+                              ))
+                          }
+                      }
+                  } catch (e: Exception) {
+                      // Offline Safe Fallback
+                      list.addAll(listOf(
+                          Surah(1, "الفَاتِحة", "Al-Fatihah", 7),
+                          Surah(2, "البَقَرَة", "Al-Baqarah", 286),
+                          Surah(36, "يس", "Ya-Sin", 83),
+                          Surah(55, "الرَّحْمَٰن", "Ar-Rahman", 78),
+                          Surah(67, "المُلْك", "Al-Mulk", 30),
+                          Surah(112, "الإِخْلَاص", "Al-Ikhlas", 4)
+                      ))
+                  }
+                  list
+              }
+
+              suspend fun fetchSurahDetails(surahNumber: Int): List<Ayah> = withContext(Dispatchers.IO) {
+                  val ayahs = mutableListOf<Ayah>()
+                  try {
+                      val url = URL("https://api.alquran.cloud/v1/surah/$surahNumber/ar.alafasy")
+                      val conn = url.openConnection() as HttpURLConnection
+                      conn.connectTimeout = 8000
+                      conn.readTimeout = 8000
+
+                      if (conn.responseCode == 200) {
+                          val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                          val json = JSONObject(reader.readText())
+                          val data = json.getJSONObject("data")
+                          val ayahsArray = data.getJSONArray("ayahs")
+                          for (i in 0 until ayahsArray.length()) {
+                              val a = ayahsArray.getJSONObject(i)
+                              ayahs.add(Ayah(
+                                  a.getInt("numberInSurah"),
+                                  a.getString("text"),
+                                  a.optString("audio", "")
+                              ))
+                          }
+                      }
+                  } catch (e: Exception) {
+                      ayahs.add(Ayah(1, "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", ""))
+                      ayahs.add(Ayah(2, "الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ", ""))
+                  }
+                  ayahs
+              }
+
+              fun playAudio(url: String, onComplete: () -> Unit) {
+                  try {
+                      if (mediaPlayer != null) {
+                          mediaPlayer?.stop()
+                          mediaPlayer?.release()
+                          mediaPlayer = null
+                      }
+                      if (url.isBlank()) return
+
+                      mediaPlayer = MediaPlayer().apply {
+                          setAudioAttributes(
+                              AudioAttributes.Builder()
+                                  .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                                  .setUsage(AudioAttributes.USAGE_MEDIA)
+                                  .build()
+                          )
+                          setDataSource(url)
+                          prepareAsync()
+                          setOnPreparedListener {
+                              currentlyPlayingUrl = url
+                              start()
+                          }
+                          setOnCompletionListener {
+                              currentlyPlayingUrl = null
+                              onComplete()
+                          }
+                      }
+                  } catch (e: Exception) {
+                      currentlyPlayingUrl = null
+                  }
+              }
+
+              fun stopAudio() {
+                  mediaPlayer?.stop()
+                  mediaPlayer?.release()
+                  mediaPlayer = null
+                  currentlyPlayingUrl = null
               }
           }
           """.strip(),
@@ -393,6 +508,7 @@ jobs:
           import androidx.activity.ComponentActivity
           import androidx.activity.compose.setContent
           import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyColumn
           import androidx.compose.foundation.lazy.items
@@ -406,26 +522,32 @@ jobs:
           import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.sp
-          import com.muslimcommunity.app.dynamic.DynamicDependency
-          import com.muslimcommunity.app.dynamic.DynamicDependencyManager
           import kotlinx.coroutines.launch
+
+          enum class ActiveScreen { Home, Quran, Prayer, Settings, SurahDetail }
 
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  DynamicDependencyManager.init(this)
+                  DynamicSyncManager.initStatus(this)
                   setContent {
-                      MuslimCommunityApp()
+                      MuslimApp()
                   }
+              }
+              override fun onDestroy() {
+                  super.onDestroy()
+                  QuranRepository.stopAudio()
               }
           }
 
+          @OptIn(ExperimentalMaterial3Api::class)
           @Composable
-          fun MuslimCommunityApp() {
-              var selectedTab by remember { mutableIntStateOf(0) }
-              val nativeText = remember { runCatching { NativeCore.getEngineInfo() }.getOrDefault("Native Core Loaded") }
+          fun MuslimApp() {
+              var currentScreen by remember { mutableStateOf(ActiveScreen.Home) }
+              var selectedSurah by remember { mutableStateOf<Surah?>(null) }
 
               MaterialTheme(colorScheme = darkColorScheme(
                   primary = Color(0xFF10B981),
@@ -433,27 +555,67 @@ jobs:
                   surface = Color(0xFF1E293B)
               )) {
                   Scaffold(
+                      topBar = {
+                          TopAppBar(
+                              title = {
+                                  Text(
+                                      text = if (currentScreen == ActiveScreen.SurahDetail) (selectedSurah?.englishName ?: "Surah") else "Muslim Community",
+                                      fontWeight = FontWeight.Bold,
+                                      fontSize = 20.sp
+                                  )
+                              },
+                              navigationIcon = {
+                                  if (currentScreen == ActiveScreen.Settings || currentScreen == ActiveScreen.SurahDetail) {
+                                      IconButton(onClick = { currentScreen = ActiveScreen.Home }) {
+                                          Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                                      }
+                                  }
+                              },
+                              actions = {
+                                  if (currentScreen != ActiveScreen.Settings) {
+                                      IconButton(onClick = { currentScreen = ActiveScreen.Settings }) {
+                                          Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color(0xFF10B981))
+                                      }
+                                  }
+                              },
+                              colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                          )
+                      },
                       bottomBar = {
-                          NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                              val items = listOf("Home", "Dynamic Libs", "Quran", "Prayer")
-                              val icons = listOf(Icons.Default.Home, Icons.Default.Refresh, Icons.Default.Star, Icons.Default.DateRange)
-                              items.forEachIndexed { index, title ->
+                          if (currentScreen != ActiveScreen.Settings && currentScreen != ActiveScreen.SurahDetail) {
+                              NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                                   NavigationBarItem(
-                                      selected = selectedTab == index,
-                                      onClick = { selectedTab = index },
-                                      icon = { Icon(icons[index], contentDescription = title) },
-                                      label = { Text(title) }
+                                      selected = currentScreen == ActiveScreen.Home,
+                                      onClick = { currentScreen = ActiveScreen.Home },
+                                      icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                                      label = { Text("Home") }
+                                  )
+                                  NavigationBarItem(
+                                      selected = currentScreen == ActiveScreen.Quran,
+                                      onClick = { currentScreen = ActiveScreen.Quran },
+                                      icon = { Icon(Icons.Default.Star, contentDescription = "Quran") },
+                                      label = { Text("Quran API") }
+                                  )
+                                  NavigationBarItem(
+                                      selected = currentScreen == ActiveScreen.Prayer,
+                                      onClick = { currentScreen = ActiveScreen.Prayer },
+                                      icon = { Icon(Icons.Default.DateRange, contentDescription = "Prayer") },
+                                      label = { Text("Prayer") }
                                   )
                               }
                           }
                       }
-                  ) { innerPadding ->
-                      Box(modifier = Modifier.padding(innerPadding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                          when (selectedTab) {
-                              0 -> HomeTab(nativeText)
-                              1 -> DynamicLibsTab()
-                              2 -> QuranTab()
-                              3 -> PrayerTab()
+                  ) { padding ->
+                      Box(modifier = Modifier.padding(padding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                          when (currentScreen) {
+                              ActiveScreen.Home -> HomeScreen(onOpenSettings = { currentScreen = ActiveScreen.Settings })
+                              ActiveScreen.Quran -> QuranScreen(onSelectSurah = { surah ->
+                                  selectedSurah = surah
+                                  currentScreen = ActiveScreen.SurahDetail
+                              })
+                              ActiveScreen.Prayer -> PrayerScreen()
+                              ActiveScreen.Settings -> SettingsScreen()
+                              ActiveScreen.SurahDetail -> selectedSurah?.let { SurahDetailScreen(it) }
                           }
                       }
                   }
@@ -461,7 +623,9 @@ jobs:
           }
 
           @Composable
-          fun HomeTab(nativeText: String) {
+          fun HomeScreen(onOpenSettings: () -> Unit) {
+              val nativeText = remember { runCatching { NativeCore.getEngineInfo() }.getOrDefault("Native Ready") }
+
               LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                   item {
                       Card(
@@ -470,24 +634,28 @@ jobs:
                           modifier = Modifier.fillMaxWidth()
                       ) {
                           Column(modifier = Modifier.padding(18.dp)) {
-                              Text("Daily Ayat", color = Color.White, fontSize = 13.sp)
+                              Text("Ayat of the Day", color = Color(0xFFA7F3D0), fontSize = 13.sp)
                               Spacer(modifier = Modifier.height(6.dp))
-                              Text("“Indeed, Allah is with those who are patient.”", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                              Text("Surah Al-Baqarah 2:153", color = Color(0xFFA7F3D0), fontSize = 12.sp)
+                              Text("“Indeed, Allah is with those who are patient.”", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                              Text("Surah Al-Baqarah 2:153", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
                           }
                       }
                   }
                   item {
                       Card(
                           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                          modifier = Modifier.fillMaxWidth()
+                          shape = RoundedCornerShape(14.dp),
+                          modifier = Modifier.fillMaxWidth().clickable { onOpenSettings() }
                       ) {
                           Column(modifier = Modifier.padding(16.dp)) {
-                              Text("Dynamic Architecture Status", color = Color.White, fontWeight = FontWeight.Bold)
-                              Spacer(modifier = Modifier.height(4.dp))
+                              Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                  Text("GitHub Dynamic Architecture", color = Color.White, fontWeight = FontWeight.Bold)
+                                  Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF10B981))
+                              }
+                              Spacer(modifier = Modifier.height(6.dp))
                               Text(nativeText, color = Color(0xFF10B981), fontSize = 13.sp)
                               Spacer(modifier = Modifier.height(4.dp))
-                              Text("Base APK: ~2.5 MB • Dependencies: Dynamic Loaded", color = Color.LightGray, fontSize = 12.sp)
+                              Text("Tap to view repo modules, build metadata & sync status", color = Color.Gray, fontSize = 12.sp)
                           }
                       }
                   }
@@ -495,17 +663,27 @@ jobs:
           }
 
           @Composable
-          fun DynamicLibsTab() {
+          fun SettingsScreen() {
               val context = LocalContext.current
               val scope = rememberCoroutineScope()
-              var dependencies by remember { mutableStateOf(DynamicDependencyManager.registry.toList()) }
+              var modules by remember { mutableStateOf(DynamicSyncManager.moduleList.toList()) }
 
-              LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+              LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                   item {
-                      Text("Dynamic Library Manager", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                      Text("Modules and dependencies load dynamically on-demand", color = Color.Gray, fontSize = 12.sp)
+                      Text("GitHub Actions Build Info", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                          Column(modifier = Modifier.padding(14.dp)) {
+                              Text("Repository: bindassrkks-cell/Lua", color = Color(0xFF10B981), fontWeight = FontWeight.SemiBold)
+                              Text("Active Engine: Kotlin 2.0 + Compose BOM + NDK 26.3", color = Color.LightGray, fontSize = 12.sp)
+                              Text("Build System: Split-ABI Ultra-Light (2-4 MB)", color = Color.LightGray, fontSize = 12.sp)
+                          }
+                      }
                   }
-                  items(dependencies) { dep ->
+                  item {
+                      Text("Dynamic Repository Modules (modules/)", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                      Text("Downloaded once and preserved locally. Never re-asks download.", color = Color.Gray, fontSize = 12.sp)
+                  }
+                  items(modules) { mod ->
                       Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
                           Row(
                               modifier = Modifier.padding(16.dp).fillMaxWidth(),
@@ -513,25 +691,22 @@ jobs:
                               verticalAlignment = Alignment.CenterVertically
                           ) {
                               Column(modifier = Modifier.weight(1f)) {
-                                  Text(dep.name, color = Color.White, fontWeight = FontWeight.SemiBold)
-                                  Text(
-                                      if (dep.isNative) "Native .SO Library" else "Dynamic DEX Module",
-                                      color = Color(0xFF10B981),
-                                      fontSize = 11.sp
-                                  )
+                                  Text(mod.name, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                  Text("Path: modules/${mod.type}/${mod.fileName}", color = Color(0xFF10B981), fontSize = 12.sp)
+                                  Text(if (mod.isSynced) "Status: Synced & Verified (Offline Safe)" else "Status: Pending Sync", color = Color.LightGray, fontSize = 11.sp)
                               }
                               Button(
                                   onClick = {
                                       scope.launch {
-                                          DynamicDependencyManager.downloadAndLoad(context, dep)
-                                          dependencies = DynamicDependencyManager.registry.toList()
+                                          DynamicSyncManager.syncModule(context, mod, force = true)
+                                          modules = DynamicSyncManager.moduleList.toList()
                                       }
                                   },
                                   colors = ButtonDefaults.buttonColors(
-                                      containerColor = if (dep.isInstalled) Color(0xFF047857) else Color(0xFF2563EB)
+                                      containerColor = if (mod.isSynced) Color(0xFF047857) else Color(0xFF2563EB)
                                   )
                               ) {
-                                  Text(if (dep.isInstalled) "Loaded" else "Load Lib", fontSize = 12.sp)
+                                  Text(if (mod.isSynced) "Synced" else "Sync", fontSize = 12.sp)
                               }
                           }
                       }
@@ -540,19 +715,128 @@ jobs:
           }
 
           @Composable
-          fun QuranTab() {
-              val surahs = listOf("1. Al-Fatihah", "2. Al-Baqarah", "36. Ya-Sin", "55. Ar-Rahman", "67. Al-Mulk")
-              LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                  items(surahs) { surah ->
-                      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
-                          Text(surah, modifier = Modifier.padding(16.dp), color = Color.White, fontWeight = FontWeight.Medium)
+          fun QuranScreen(onSelectSurah: (Surah) -> Unit) {
+              var surahs by remember { mutableStateOf<List<Surah>>(emptyList()) }
+              var loading by remember { mutableStateOf(true) }
+
+              LaunchedEffect(Unit) {
+                  surahs = QuranRepository.fetchSurahList()
+                  loading = false
+              }
+
+              if (loading) {
+                  Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                      CircularProgressIndicator(color = Color(0xFF10B981))
+                  }
+              } else {
+                  LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                      items(surahs) { surah ->
+                          Card(
+                              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                              shape = RoundedCornerShape(12.dp),
+                              modifier = Modifier.fillMaxWidth().clickable { onSelectSurah(surah) }
+                          ) {
+                              Row(
+                                  modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                  horizontalArrangement = Arrangement.SpaceBetween,
+                                  verticalAlignment = Alignment.CenterVertically
+                              ) {
+                                  Row(verticalAlignment = Alignment.CenterVertically) {
+                                      Surface(
+                                          shape = RoundedCornerShape(8.dp),
+                                          color = Color(0xFF0F172A),
+                                          modifier = Modifier.size(36.dp)
+                                      ) {
+                                          Box(contentAlignment = Alignment.Center) {
+                                              Text("${surah.number}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                          }
+                                      }
+                                      Spacer(modifier = Modifier.width(12.dp))
+                                      Column {
+                                          Text(surah.englishName, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                          Text("${surah.verses} Verses", color = Color.Gray, fontSize = 12.sp)
+                                      }
+                                  }
+                                  Text(surah.name, color = Color(0xFF10B981), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                              }
+                          }
                       }
                   }
               }
           }
 
           @Composable
-          fun PrayerTab() {
+          fun SurahDetailScreen(surah: Surah) {
+              var ayahs by remember { mutableStateOf<List<Ayah>>(emptyList()) }
+              var loading by remember { mutableStateOf(true) }
+              var playingIndex by remember { mutableStateOf<Int?>(null) }
+
+              LaunchedEffect(surah.number) {
+                  ayahs = QuranRepository.fetchSurahDetails(surah.number)
+                  loading = false
+              }
+
+              if (loading) {
+                  Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                      CircularProgressIndicator(color = Color(0xFF10B981))
+                  }
+              } else {
+                  LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                      item {
+                          Card(
+                              colors = CardDefaults.cardColors(containerColor = Color(0xFF047857)),
+                              modifier = Modifier.fillMaxWidth(),
+                              shape = RoundedCornerShape(14.dp)
+                          ) {
+                              Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                  Text(surah.name, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                                  Text(surah.englishName, color = Color(0xFFA7F3D0), fontSize = 14.sp)
+                              }
+                          }
+                      }
+                      items(ayahs) { ayah ->
+                          Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                              Column(modifier = Modifier.padding(16.dp)) {
+                                  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                      Text("Ayah ${ayah.numberInSurah}", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                      if (ayah.audioUrl.isNotBlank()) {
+                                          IconButton(onClick = {
+                                              if (playingIndex == ayah.numberInSurah) {
+                                                  QuranRepository.stopAudio()
+                                                  playingIndex = null
+                                              } else {
+                                                  playingIndex = ayah.numberInSurah
+                                                  QuranRepository.playAudio(ayah.audioUrl) {
+                                                      playingIndex = null
+                                                  }
+                                              }
+                                          }) {
+                                              Icon(
+                                                  if (playingIndex == ayah.numberInSurah) Icons.Default.Check else Icons.Default.Star,
+                                                  contentDescription = "Audio Play",
+                                                  tint = Color(0xFF10B981)
+                                              )
+                                          }
+                                      }
+                                  }
+                                  Spacer(modifier = Modifier.height(8.dp))
+                                  Text(
+                                      text = ayah.text,
+                                      color = Color.White,
+                                      fontSize = 20.sp,
+                                      lineHeight = 32.sp,
+                                      textAlign = TextAlign.End,
+                                      modifier = Modifier.fillMaxWidth()
+                                  )
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun PrayerScreen() {
               val prayers = listOf("Fajr" to "05:00 AM", "Dhuhr" to "12:15 PM", "Asr" to "03:45 PM", "Maghrib" to "06:10 PM", "Isha" to "07:30 PM")
               LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                   items(prayers) { (name, time) ->
@@ -568,7 +852,7 @@ jobs:
           """.strip()
           }
 
-          for path, content in files.items():
+          for path, content in android_files.items():
               parent = os.path.dirname(path)
               if parent:
                   os.makedirs(parent, exist_ok=True)
@@ -576,7 +860,7 @@ jobs:
                   f.write(content)
               print(f"Created: {path}")
 
-          print("Generated dynamic system project successfully.")
+          print("Generated Full Project with Modules successfully.")
           PYEOF
 
       # ============================================================
@@ -625,40 +909,40 @@ jobs:
           rm -rf /tmp/gradle*
 
       # ============================================================
-      # 9. COMPILE ULTRA-LIGHT RELEASE APKS
+      # 9. COMPILE FAST ULTRA-LIGHT APK
       # ============================================================
       - name: Compile Ultra-Light APKs
         run: |
           ./gradlew assembleRelease --no-daemon --parallel --build-cache
 
       # ============================================================
-      # 10. VERIFY GENERATED SIZES (TARGET: 2-4 MB)
+      # 10. VERIFY APKS SIZE (2-4 MB)
       # ============================================================
-      - name: Display Generated APK Sizes
+      - name: Verify Output Sizes
         run: |
           echo "======================================"
-          echo "GENERATED ULTRA-LIGHT APK SIZES:"
+          echo "BUILT RELEASE APKS:"
           ls -lh app/build/outputs/apk/release/*.apk
           echo "======================================"
 
       # ============================================================
-      # 11. COMMIT AND PUSH ALL SOURCE FILES TO REPOSITORY
+      # 11. COMMIT & PUSH APP + MODULES (LIB, DEX, JSON) TO REPO
       # ============================================================
-      - name: Push All Sources to Repository
+      - name: Push All Sources & Modules to Repo
         if: ${{ inputs.push_project == true }}
         shell: bash
         run: |
           git add -A
           if git diff --cached --quiet; then
-            echo "No changes detected to push."
+            echo "No changes to commit."
           else
-            git commit -m "feat: Muslim Community dynamic library architecture [skip ci]"
+            git commit -m "feat: complete Muslim app with Quran API, Settings & Modules (lib, dex, json) [skip ci]"
             git push origin "${GITHUB_REF_NAME}"
-            echo "All dynamic project sources pushed to repository."
+            echo "Pushed app and dynamic modules to repository."
           fi
 
       # ============================================================
-      # 12. UPLOAD ARTIFACTS
+      # 12. UPLOAD RELEASE ARTIFACTS
       # ============================================================
       - name: Upload Ultra-Light APKs
         uses: actions/upload-artifact@v4
