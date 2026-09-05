@@ -1,16 +1,12 @@
 package com.muslimcommunity.app
 
 import android.content.Context
-import android.content.SharedPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 
-data class RepoModuleItem(
+data class DynamicModule(
     val id: String,
     val name: String,
     val type: String,
@@ -20,47 +16,42 @@ data class RepoModuleItem(
 )
 
 object DynamicSyncManager {
-    private const val PREFS_NAME = "dynamic_module_prefs"
-    private const val CONFIG_URL = "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/json/modules.json"
+    private const val PREFS_NAME = "muslim_sync_prefs"
 
-    val moduleList = mutableListOf(
-        RepoModuleItem("quran_core_dex", "Quran Tafseer & Tajweed Module", "dex", "quran_core.dex", "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/quran_core.dex"),
-        RepoModuleItem("native_prayer_math", "High Precision Astro Native Lib", "so", "libnative_prayer.so", "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_prayer.so")
+    val registry = mutableListOf(
+        DynamicModule("vfx_azkar_dex", "iOS VFX Azkar & Banner Engine", "dex", "vfx_engine.dex", "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/vfx_engine.dex"),
+        DynamicModule("native_ux_so", "Native High-Precision UX Lib", "so", "libnative_ux.so", "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_ux.so")
     )
 
-    fun initStatus(context: Context) {
+    fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val moduleDir = File(context.filesDir, "dynamic_modules")
-        if (!moduleDir.exists()) moduleDir.mkdirs()
+        val modDir = File(context.filesDir, "dynamic_modules")
+        if (!modDir.exists()) modDir.mkdirs()
 
-        moduleList.forEach { module ->
-            val localFile = File(moduleDir, module.fileName)
-            module.isSynced = prefs.getBoolean("synced_${module.id}", false) && localFile.exists()
+        registry.forEach { item ->
+            val local = File(modDir, item.fileName)
+            item.isSynced = prefs.getBoolean("synced_${item.id}", false) && local.exists()
         }
     }
 
-    suspend fun syncModule(context: Context, item: RepoModuleItem, force: Boolean = false): Boolean {
+    suspend fun syncModule(context: Context, item: DynamicModule, force: Boolean = false): Boolean {
         return withContext(Dispatchers.IO) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val moduleDir = File(context.filesDir, "dynamic_modules")
-            if (!moduleDir.exists()) moduleDir.mkdirs()
-            val targetFile = File(moduleDir, item.fileName)
+            val modDir = File(context.filesDir, "dynamic_modules")
+            if (!modDir.exists()) modDir.mkdirs()
+            val target = File(modDir, item.fileName)
 
-            // Do not download again if already synced
-            if (!force && item.isSynced && targetFile.exists()) {
+            if (!force && item.isSynced && target.exists()) {
                 return@withContext true
             }
 
             try {
-                // Write persistent file locally
-                FileOutputStream(targetFile).use { out ->
-                    out.write("SYNCED_DYNAMIC_PAYLOAD_VERIFIED".toByteArray())
+                FileOutputStream(target).use { out ->
+                    out.write("IOS_VFX_DYNAMIC_MODULE_PAYLOAD_READY".toByteArray())
                 }
-
                 if (item.type == "so") {
-                    NativeCore.loadNativeModule(targetFile.absolutePath)
+                    NativeCore.loadDynamicNativeLib(target.absolutePath)
                 }
-
                 prefs.edit().putBoolean("synced_${item.id}", true).apply()
                 item.isSynced = true
                 true

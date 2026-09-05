@@ -1,23 +1,20 @@
 {
-  "repository": "bindassrkks-cell/Lua",
-  "schema_version": "1.0.0",
-  "last_updated": "2026-09-05",
+  "repo": "bindassrkks-cell/Lua",
+  "version": "2.0.0",
   "modules": [
     {
-      "id": "quran_core_dex",
-      "name": "Quran Tafseer & Tajweed Module",
+      "id": "vfx_azkar_dex",
+      "name": "iOS VFX Azkar & Banner Engine",
       "type": "dex",
-      "file": "quran_core.dex",
-      "version": 1,
-      "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/quran_core.dex"
+      "file": "vfx_engine.dex",
+      "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/dex/vfx_engine.dex"
     },
     {
-      "id": "native_prayer_math",
-      "name": "High Precision Astro Native Lib",
+      "id": "native_ux_so",
+      "name": "Native High-Precision UX Lib",
       "type": "so",
-      "file": "libnative_prayer.so",
-      "version": 1,
-      "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_prayer.so"
+      "file": "libnative_ux.so",
+      "url": "https://raw.githubusercontent.com/bindassrkks-cell/Lua/main/modules/lib/libnative_ux.so"
     }
   ]
 }

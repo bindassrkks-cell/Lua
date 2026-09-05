@@ -14,33 +14,25 @@ data class Surah(val number: Int, val name: String, val englishName: String, val
 data class Ayah(val numberInSurah: Int, val text: String, val audioUrl: String)
 
 object QuranRepository {
-    private var mediaPlayer: MediaPlayer? = null
-    var currentlyPlayingUrl: String? = null
+    private var player: MediaPlayer? = null
+    var activeAudioUrl: String? = null
 
-    suspend fun fetchSurahList(): List<Surah> = withContext(Dispatchers.IO) {
+    suspend fun getSurahs(): List<Surah> = withContext(Dispatchers.IO) {
         val list = mutableListOf<Surah>()
         try {
             val url = URL("https://api.alquran.cloud/v1/surah")
             val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 7000
-            conn.readTimeout = 7000
-
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
             if (conn.responseCode == 200) {
-                val reader = BufferedReader(InputStreamReader(conn.inputStream))
-                val json = JSONObject(reader.readText())
+                val json = JSONObject(BufferedReader(InputStreamReader(conn.inputStream)).readText())
                 val data = json.getJSONArray("data")
                 for (i in 0 until data.length()) {
                     val item = data.getJSONObject(i)
-                    list.add(Surah(
-                        item.getInt("number"),
-                        item.getString("name"),
-                        item.getString("englishName"),
-                        item.getInt("numberOfAyahs")
-                    ))
+                    list.add(Surah(item.getInt("number"), item.getString("name"), item.getString("englishName"), item.getInt("numberOfAyahs")))
                 }
             }
         } catch (e: Exception) {
-            // Offline Safe Fallback
             list.addAll(listOf(
                 Surah(1, "الفَاتِحة", "Al-Fatihah", 7),
                 Surah(2, "البَقَرَة", "Al-Baqarah", 286),
@@ -53,71 +45,54 @@ object QuranRepository {
         list
     }
 
-    suspend fun fetchSurahDetails(surahNumber: Int): List<Ayah> = withContext(Dispatchers.IO) {
-        val ayahs = mutableListOf<Ayah>()
+    suspend fun getSurahAyahs(surahNumber: Int): List<Ayah> = withContext(Dispatchers.IO) {
+        val result = mutableListOf<Ayah>()
         try {
             val url = URL("https://api.alquran.cloud/v1/surah/$surahNumber/ar.alafasy")
             val conn = url.openConnection() as HttpURLConnection
             conn.connectTimeout = 8000
             conn.readTimeout = 8000
-
             if (conn.responseCode == 200) {
-                val reader = BufferedReader(InputStreamReader(conn.inputStream))
-                val json = JSONObject(reader.readText())
-                val data = json.getJSONObject("data")
-                val ayahsArray = data.getJSONArray("ayahs")
+                val json = JSONObject(BufferedReader(InputStreamReader(conn.inputStream)).readText())
+                val ayahsArray = json.getJSONObject("data").getJSONArray("ayahs")
                 for (i in 0 until ayahsArray.length()) {
                     val a = ayahsArray.getJSONObject(i)
-                    ayahs.add(Ayah(
-                        a.getInt("numberInSurah"),
-                        a.getString("text"),
-                        a.optString("audio", "")
-                    ))
+                    result.add(Ayah(a.getInt("numberInSurah"), a.getString("text"), a.optString("audio", "")))
                 }
             }
         } catch (e: Exception) {
-            ayahs.add(Ayah(1, "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", ""))
-            ayahs.add(Ayah(2, "الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ", ""))
+            result.add(Ayah(1, "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", ""))
+            result.add(Ayah(2, "الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ", ""))
         }
-        ayahs
+        result
     }
 
-    fun playAudio(url: String, onComplete: () -> Unit) {
+    fun playRecitation(url: String, onFinish: () -> Unit) {
         try {
-            if (mediaPlayer != null) {
-                mediaPlayer?.stop()
-                mediaPlayer?.release()
-                mediaPlayer = null
-            }
+            stopRecitation()
             if (url.isBlank()) return
-
-            mediaPlayer = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
+            player = MediaPlayer().apply {
+                setAudioAttributes(AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).setUsage(AudioAttributes.USAGE_MEDIA).build())
                 setDataSource(url)
                 prepareAsync()
                 setOnPreparedListener {
-                    currentlyPlayingUrl = url
+                    activeAudioUrl = url
                     start()
                 }
                 setOnCompletionListener {
-                    currentlyPlayingUrl = null
-                    onComplete()
+                    activeAudioUrl = null
+                    onFinish()
                 }
             }
         } catch (e: Exception) {
-            currentlyPlayingUrl = null
+            activeAudioUrl = null
         }
     }
 
-    fun stopAudio() {
-        mediaPlayer?.stop()
-        mediaPlayer?.release()
-        mediaPlayer = null
-        currentlyPlayingUrl = null
+    fun stopRecitation() {
+        player?.stop()
+        player?.release()
+        player = null
+        activeAudioUrl = null
     }
 }
