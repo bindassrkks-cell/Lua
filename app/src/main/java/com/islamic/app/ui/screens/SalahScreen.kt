@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,7 +46,7 @@ fun SalahScreen(onBack: () -> Unit) {
 
     Column(modifier = Modifier.fillMaxSize().background(DarkOledBlack).statusBarsPadding().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = null, tint = TextPureWhite) }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = TextPureWhite) }
             Text("Salah Guide", color = TextPureWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.weight(1f))
             Text("Step ${current.step} of ${if (steps.isNotEmpty()) steps.size else 3}", color = MintSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)

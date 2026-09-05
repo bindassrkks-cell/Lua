@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -137,7 +139,7 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                         }
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
                             Box(modifier = Modifier.size(38.dp).clip(CircleShape).background(EmeraldPrimary.copy(alpha = 0.2f)).border(1.dp, EmeraldPrimary, CircleShape), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.MenuBook, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(20.dp))
+                                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, tint = EmeraldPrimary, modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
@@ -185,7 +187,7 @@ fun SocialScreen(onOpenSettings: () -> Unit) {
                             },
                             modifier = Modifier.clip(CircleShape).background(if (isPlayingAudio) EmeraldPrimary else DarkSurfaceCard)
                         ) {
-                            Icon(Icons.Default.VolumeUp, contentDescription = null, tint = if (isPlayingAudio) DarkOledBlack else TextPureWhite)
+                            Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, tint = if (isPlayingAudio) DarkOledBlack else TextPureWhite)
                         }
                     }
 
