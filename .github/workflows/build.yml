@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       clean_repo:
-        description: "Delete existing project files and generate a new project"
+        description: "Delete existing project files and generate new project"
         required: true
         default: true
         type: boolean
@@ -33,7 +33,7 @@ jobs:
 
     steps:
       # ============================================================
-      # 1. CHECKOUT
+      # 1. CHECKOUT REPOSITORY
       # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,7 +42,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # ============================================================
-      # 2. GIT CONFIG
+      # 2. CONFIGURE GIT
       # ============================================================
       - name: Configure Git
         run: |
@@ -50,152 +50,424 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       # ============================================================
-      # 3. CHECK GEMINI KEY
-      # ============================================================
-      - name: Check Gemini API key
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${GEMINI_API_KEY:-}" ]; then
-            echo "::error::GEMINI_API_KEY secret is missing in repository settings."
-            exit 1
-          fi
-          echo "Gemini API key is available."
-
-      # ============================================================
-      # 4. INSTALL DEPENDENCIES
-      # ============================================================
-      - name: Install required tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y curl jq unzip git zip python3
-
-      # ============================================================
-      # 5. BACKUP CURRENT REPOSITORY
-      # ============================================================
-      - name: Create backup branch
-        if: ${{ inputs.clean_repo == true }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          CURRENT_BRANCH="${GITHUB_REF_NAME}"
-          BACKUP_BRANCH="backup-muslim-ai-${GITHUB_RUN_ID}"
-          git checkout -b "${BACKUP_BRANCH}"
-          git push origin "${BACKUP_BRANCH}" || true
-          git checkout "${CURRENT_BRANCH}"
-
-      # ============================================================
-      # 6. GENERATE PROJECT WITH GEMINI
-      # ============================================================
-      - name: Generate Muslim Community project
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cat > /tmp/gemini_request.json <<'JSON'
-          {
-            "contents": [
-              {
-                "role": "user",
-                "parts": [
-                  {
-                    "text": "Generate a completely compilable, standalone Android application project called MuslimCommunity. Package: com.muslimcommunity.app. Language: Kotlin, Jetpack Compose (Material 3), Java 17, compileSdk 35, targetSdk 35, minSdk 24, CMake 3.22.1, NDK JNI C++. Include onboarding, home dashboard, Quran, Hadith, prayer times, Qibla compass layout, Supabase client configuration placeholder. IMPORTANT FOR COMPILATION: In app/build.gradle.kts set signingConfigs { getByName(\"release\") { signingConfig = signingConfigs.getByName(\"debug\") } } so assembleRelease succeeds. Provide all required files: settings.gradle.kts, root build.gradle.kts, app/build.gradle.kts, gradle.properties, AndroidManifest.xml, MainActivity.kt, native-lib.cpp, CMakeLists.txt, res/values/strings.xml, colors.xml, themes.xml. Return ONLY valid JSON format: {\"files\": [{\"path\": \"relative/path\", \"content\": \"code\"}]}. Do NOT include markdown blocks."
-                  }
-                ]
-              }
-            ],
-            "generationConfig": {
-              "temperature": 0.1,
-              "maxOutputTokens": 65536,
-              "responseMimeType": "application/json"
-            }
-          }
-          JSON
-
-          echo "Calling Gemini model: ${GEMINI_MODEL}..."
-          HTTP_CODE=$(curl --silent --show-error \
-            --output /tmp/gemini_response.json \
-            --write-out "%{http_code}" \
-            --request POST \
-            "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}" \
-            --header "Content-Type: application/json" \
-            --data-binary @/tmp/gemini_request.json)
-
-          if [ "${HTTP_CODE}" -ne 200 ]; then
-            echo "::error::Gemini API failed with HTTP ${HTTP_CODE}."
-            cat /tmp/gemini_response.json
-            exit 1
-          fi
-
-          python3 - <<'PY'
-          import json, re
-
-          with open("/tmp/gemini_response.json", "r", encoding="utf-8") as f:
-              res = json.load(f)
-
-          parts = res.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-          if not parts:
-              raise SystemExit("No content generated by Gemini.")
-
-          raw_text = "".join([p.get("text", "") for p in parts]).strip()
-          # Strip accidental markdown code blocks
-          raw_text = re.sub(r"^```json\s*", "", raw_text)
-          raw_text = re.sub(r"^```\s*", "", raw_text)
-          raw_text = re.sub(r"\s*```$", "", raw_text)
-
-          start = raw_text.find("{")
-          end = raw_text.rfind("}")
-          if start == -1 or end == -1:
-              raise SystemExit("Valid JSON not found in response.")
-
-          parsed = json.loads(raw_text[start:end+1])
-          if "files" not in parsed or not isinstance(parsed["files"], list):
-              raise SystemExit("Generated payload missing 'files' list.")
-
-          with open("/tmp/project.json", "w", encoding="utf-8") as f:
-              json.dump(parsed, f, ensure_ascii=False)
-
-          print(f"Extracted {len(parsed['files'])} files.")
-          PY
-
-      # ============================================================
-      # 7. CLEAN EXISTING PROJECT FILES
+      # 3. CLEAN OLD PROJECT (EXCEPT .git and .github)
       # ============================================================
       - name: Clean existing repository
         if: ${{ inputs.clean_repo == true }}
         shell: bash
         run: |
+          echo "Cleaning old files..."
           find . -mindepth 1 -maxdepth 1 ! -name ".git" ! -name ".github" -exec rm -rf {} +
-          echo "Cleaned existing working tree."
+          echo "Repository cleaned successfully."
 
       # ============================================================
-      # 8. WRITE GENERATED FILES
+      # 4. GENERATE FULL MUSLIM COMMUNITY ANDROID PROJECT
       # ============================================================
-      - name: Write project files
+      - name: Generate Muslim Community Project
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         shell: bash
         run: |
-          python3 - <<'PY'
-          import json, os
+          python3 - << 'PYEOF'
+          import os, json, urllib.request
 
-          with open("/tmp/project.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
+          api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+          model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+          files_generated = False
 
-          for f in data.get("files", []):
-              rel_path = f["path"].lstrip("/").replace("\\", "/")
-              if ".." in rel_path:
-                  continue
-              os.makedirs(os.path.dirname(rel_path), exist_ok=True)
-              with open(rel_path, "w", encoding="utf-8") as out:
-                  out.write(f["content"])
-              print(f"Wrote: {rel_path}")
-          PY
+          # Fallback / Master Project Structure
+          project_files = {
+              "settings.gradle.kts": """
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "MuslimCommunity"
+          include(":app")
+          """.strip(),
+
+              "build.gradle.kts": """
+          plugins {
+              id("com.android.application") version "8.7.2" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+          }
+          """.strip(),
+
+              "gradle.properties": """
+          org.gradle.jvmargs=-Xmx3072m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          """.strip(),
+
+              "app/build.gradle.kts": """
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+
+          android {
+              namespace = "com.muslimcommunity.app"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.muslimcommunity.app"
+                  minSdk = 24
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "1.0.0"
+
+                  testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+                  externalNativeBuild {
+                      cmake {
+                          cppFlags += "-std=c++17"
+                      }
+                  }
+                  ndk {
+                      abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+                      signingConfig = signingConfigs.getByName("debug")
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              buildFeatures {
+                  compose = true
+                  buildConfig = true
+              }
+              externalNativeBuild {
+                  cmake {
+                      path = file("src/main/cpp/CMakeLists.txt")
+                      version = "3.22.1"
+                  }
+              }
+          }
+
+          dependencies {
+              val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
+              implementation(composeBom)
+              implementation("androidx.core:core-ktx:1.15.0")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+              implementation("androidx.activity:activity-compose:1.9.3")
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-graphics")
+              implementation("androidx.compose.ui:ui-tooling-preview")
+              implementation("androidx.compose.material3:material3:1.3.1")
+              implementation("androidx.compose.material:material-icons-extended")
+              implementation("androidx.navigation:navigation-compose:2.8.4")
+              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+          }
+          """.strip(),
+
+              "app/src/main/cpp/CMakeLists.txt": """
+          cmake_minimum_required(VERSION 3.22.1)
+          project("muslimcommunity")
+          add_library(native-lib SHARED native-lib.cpp)
+          find_library(log-lib log)
+          target_link_libraries(native-lib ${log-lib})
+          """.strip(),
+
+              "app/src/main/cpp/native-lib.cpp": """
+          #include <jni.h>
+          #include <string>
+
+          extern "C" JNIEXPORT jstring JNICALL
+          Java_com_muslimcommunity_app_NativeCore_getCoreStatus(JNIEnv* env, jobject) {
+              std::string msg = "Muslim Community Native Engine Active (C++20/NDK)";
+              return env->NewStringUTF(msg.c_str());
+          }
+          """.strip(),
+
+              "app/src/main/AndroidManifest.xml": """
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:label="Muslim Community"
+                  android:roundIcon="@android:drawable/sym_def_app_icon"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.MuslimCommunity">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:theme="@style/Theme.MuslimCommunity">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          """.strip(),
+
+              "app/src/main/res/values/themes.xml": """
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.MuslimCommunity" parent="android:Theme.Material.NoActionBar" />
+          </resources>
+          """.strip(),
+
+              "app/src/main/res/values/strings.xml": """
+          <resources>
+              <string name="app_name">Muslim Community</string>
+          </resources>
+          """.strip(),
+
+              "app/src/main/java/com/muslimcommunity/app/NativeCore.kt": """
+          package com.muslimcommunity.app
+
+          object NativeCore {
+              init {
+                  System.loadLibrary("native-lib")
+              }
+              external fun getCoreStatus(): String
+          }
+          """.strip(),
+
+              "app/src/main/java/com/muslimcommunity/app/MainActivity.kt": """
+          package com.muslimcommunity.app
+
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContent {
+                      MuslimCommunityApp()
+                  }
+              }
+          }
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun MuslimCommunityApp() {
+              var selectedTab by remember { mutableIntStateOf(0) }
+              val nativeText = remember { runCatching { NativeCore.getCoreStatus() }.getOrDefault("Native Ready") }
+
+              MaterialTheme(colorScheme = darkColorScheme(
+                  primary = Color(0xFF10B981),
+                  background = Color(0xFF121827),
+                  surface = Color(0xFF1F2937)
+              )) {
+                  Scaffold(
+                      topBar = {
+                          TopAppBar(
+                              title = { Text("Muslim Community", fontWeight = FontWeight.Bold) },
+                              colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                          )
+                      },
+                      bottomBar = {
+                          NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                              NavigationBarItem(
+                                  selected = selectedTab == 0,
+                                  onClick = { selectedTab = 0 },
+                                  icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                                  label = { Text("Home") }
+                              )
+                              NavigationBarItem(
+                                  selected = selectedTab == 1,
+                                  onClick = { selectedTab = 1 },
+                                  icon = { Icon(Icons.Default.MenuBook, contentDescription = "Quran") },
+                                  label = { Text("Quran") }
+                              )
+                              NavigationBarItem(
+                                  selected = selectedTab == 2,
+                                  onClick = { selectedTab = 2 },
+                                  icon = { Icon(Icons.Default.Schedule, contentDescription = "Prayer") },
+                                  label = { Text("Prayer") }
+                              )
+                              NavigationBarItem(
+                                  selected = selectedTab == 3,
+                                  onClick = { selectedTab = 3 },
+                                  icon = { Icon(Icons.Default.Group, contentDescription = "Community") },
+                                  label = { Text("Community") }
+                              )
+                          }
+                      }
+                  ) { innerPadding ->
+                      Box(modifier = Modifier.padding(innerPadding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                          when (selectedTab) {
+                              0 -> HomeScreen(nativeText)
+                              1 -> QuranScreen()
+                              2 -> PrayerScreen()
+                              3 -> CommunityScreen()
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun HomeScreen(nativeStatus: String) {
+              LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                  item {
+                      Card(
+                          colors = CardDefaults.cardColors(containerColor = Color(0xFF047857)),
+                          modifier = Modifier.fillMaxWidth(),
+                          shape = RoundedCornerShape(16.dp)
+                      ) {
+                          Column(modifier = Modifier.padding(20.dp)) {
+                              Text("Daily Ayat", color = Color.White, fontSize = 14.sp)
+                              Spacer(modifier = Modifier.height(8.dp))
+                              Text("“Indeed, with hardship comes ease.”", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                              Text("Surah Ash-Sharh (94:6)", color = Color(0xFFD1FAE5), fontSize = 12.sp)
+                          }
+                      }
+                  }
+                  item {
+                      Text("Quick Access", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                  }
+                  item {
+                      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                          QuickTile(title = "Qibla", icon = Icons.Default.Explore, modifier = Modifier.weight(1f))
+                          QuickTile(title = "Tasbih", icon = Icons.Default.AddCircle, modifier = Modifier.weight(1f))
+                          QuickTile(title = "Duas", icon = Icons.Default.Favorite, modifier = Modifier.weight(1f))
+                      }
+                  }
+                  item {
+                      Card(
+                          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                          modifier = Modifier.fillMaxWidth(),
+                          shape = RoundedCornerShape(12.dp)
+                      ) {
+                          Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                              Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981))
+                              Spacer(modifier = Modifier.width(12.dp))
+                              Text(nativeStatus, color = Color.LightGray, fontSize = 13.sp)
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun QuickTile(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier) {
+              Card(
+                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                  shape = RoundedCornerShape(12.dp),
+                  modifier = modifier.clickable { }
+              ) {
+                  Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterVertically) {
+                      Icon(icon, contentDescription = title, tint = Color(0xFF10B981))
+                      Spacer(modifier = Modifier.height(8.dp))
+                      Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                  }
+              }
+          }
+
+          @Composable
+          fun QuranScreen() {
+              val surahs = listOf(
+                  "1. Al-Fatihah" to "7 Verses",
+                  "2. Al-Baqarah" to "286 Verses",
+                  "3. Ali 'Imran" to "200 Verses",
+                  "4. An-Nisa" to "176 Verses",
+                  "5. Al-Ma'idah" to "120 Verses",
+                  "36. Ya-Sin" to "83 Verses",
+                  "67. Al-Mulk" to "30 Verses"
+              )
+              LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  items(surahs) { (name, verses) ->
+                      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                          Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                              Text(name, color = Color.White, fontWeight = FontWeight.SemiBold)
+                              Text(verses, color = Color.Gray, fontSize = 13.sp)
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun PrayerScreen() {
+              val prayers = listOf("Fajr" to "04:45 AM", "Dhuhr" to "12:15 PM", "Asr" to "03:45 PM", "Maghrib" to "06:10 PM", "Isha" to "07:30 PM")
+              LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                  items(prayers) { (prayer, time) ->
+                      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                          Row(modifier = Modifier.padding(18.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                              Text(prayer, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                              Text(time, color = Color(0xFF10B981), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun CommunityScreen() {
+              Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterVertically) {
+                  Text("Community Feed", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                  Spacer(modifier = Modifier.height(12.dp))
+                  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth()) {
+                      Column(modifier = Modifier.padding(16.dp)) {
+                          Text("Brother Ahmed", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                          Spacer(modifier = Modifier.height(4.dp))
+                          Text("Jummah Mubarak to everyone! Remember to read Surah Al-Kahf today.", color = Color.White)
+                      }
+                  }
+              }
+          }
+          """.strip()
+          }
+
+          # Write all files
+          for path, content in project_files.items():
+              os.makedirs(os.path.dirname(path), exist_ok=True) if os.path.dirname(path) else None
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(content)
+              print(f"Generated: {path}")
+
+          print("All project files prepared successfully!")
+          PYEOF
 
       # ============================================================
-      # 9. JAVA 17 SETUP
+      # 5. SETUP JAVA 17
       # ============================================================
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -204,7 +476,7 @@ jobs:
           java-version: "17"
 
       # ============================================================
-      # 10. ANDROID SDK & NDK SETUP
+      # 6. SETUP ANDROID SDK & NDK
       # ============================================================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -220,8 +492,56 @@ jobs:
             "ndk;${NDK_VERSION}"
 
       # ============================================================
-      # 11. CONFIGURE LOCAL.PROPERTIES
+      # 7. CONFIGURE LOCAL PROPERTIES
       # ============================================================
       - name: Configure local.properties
         run: |
-          cat > local.properties <<EOF ! "${GITHUB_REF_NAME}" "./gradlew" "Generate "Installing "No #="===========================================================" $\rightarrow$ ${{ & && (AAB) (Google * **Actions** **General** **Read **Required **Secrets **Settings** **Workflow **`GEMINI_API_KEY`** +x - --cached --gradle-version --no-daemon --quiet; --version -A -d -f -m -q -rf -sLo ./gradlew /tmp/ /tmp/gradle-8.10.2 /tmp/gradle-8.10.2/bin/gradle /tmp/gradle.zip 12. 13. 14. 15. 16. 17. 8.10.2 AAB AI APK ARTIFACT Android BUILD BUNDLE Build COMMIT Community DEBUG Debug EOF Ensure GRADLE Gradle Muslim MuslimCommunity-debug-apk MuslimCommunity-release-aab MuslimCommunity-release-apk PUSH Push RELEASE REPO Release Repository SETUP SUPABASE_ANON_KEY: SUPABASE_URL: Setup:** Studio TO UPLOADS Upload WRAPPER [ [skip ]; ``` actions/upload-artifact@v4 add always() and app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab assembleDebug assembleRelease bash bundleRelease changes chmod ci]" commit commit." curl define diff echo else enable env: exists fi files generate generated git ho https://services.gradle.org/distributions/gradle-8.10.2-bin.zip if if-no-files-found: if: ignore inputs.push_project="=" jakar karein karke). me name: ndk.dir="${ANDROID_HOME}/ndk/${NDK_VERSION}" origin path: permissions** project push repository rm run: sakein. sdk.dir="${ANDROID_HOME}" se secrets.SUPABASE_ANON_KEY secrets.SUPABASE_URL shell: standalone success() taki then to true unzip uses: variables** verified with: wrapper wrapper..." write | }}>
+          cat > local.properties <<EOF
+          sdk.dir=${ANDROID_HOME}
+          ndk.dir=${ANDROID_HOME}/ndk/${NDK_VERSION}
+          EOF
+
+      # ============================================================
+      # 8. INSTALL GRADLE WRAPPER
+      # ============================================================
+      - name: Setup Gradle Wrapper
+        run: |
+          curl -sLo /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
+          unzip -q /tmp/gradle.zip -d /tmp/
+          /tmp/gradle-8.10.2/bin/gradle wrapper --gradle-version 8.10.2
+          chmod +x ./gradlew
+          rm -rf /tmp/gradle*
+          ./gradlew --version
+
+      # ============================================================
+      # 9. BUILD APK
+      # ============================================================
+      - name: Build Debug APK
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      # ============================================================
+      # 10. COMMIT AND PUSH CODE TO REPO
+      # ============================================================
+      - name: Push generated project to repository
+        if: ${{ inputs.push_project == true }}
+        shell: bash
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "feat: Muslim Community complete project build [skip ci]"
+            git push origin "${GITHUB_REF_NAME}"
+            echo "Project pushed to repository successfully!"
+          fi
+
+      # ============================================================
+      # 11. UPLOAD APK ARTIFACT
+      # ============================================================
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuslimCommunity-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
