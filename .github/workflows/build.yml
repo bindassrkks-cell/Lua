@@ -1,11 +1,13 @@
-name: Zombie Battle Royale - Android ARM64
+name: Zombie Battle Royale - Full Android Build
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
       - master
+
   pull_request:
     branches:
       - main
@@ -38,74 +40,216 @@ env:
     -Dorg.gradle.caching=true
     -Dorg.gradle.jvmargs=-Xmx4g
 
+
 jobs:
 
-  # ============================================================
-  # 1. PREPARE PROJECT
-  # ============================================================
-
-  prepare:
-    name: Prepare Game Project
+  build:
+    name: Build Zombie Battle Royale ARM64 APK
     runs-on: ubuntu-latest
 
     steps:
 
-      - name: Checkout
-        uses: actions/checkout@v7
+      # ========================================================
+      # CHECKOUT
+      # ========================================================
 
-      - name: Show repository
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+
+      # ========================================================
+      # SYSTEM INFORMATION
+      # ========================================================
+
+      - name: Show runner information
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
           echo "=========================================="
-          echo "REPOSITORY"
+          echo " RUNNER"
           echo "=========================================="
 
-          pwd
+          uname -a
 
           echo
-          echo "Files:"
-          find . \
-            -maxdepth 3 \
-            -type f \
-            ! -path "./.git/*" \
-            | sort \
-            | head -500
+          echo "CPU:"
+          nproc
+
+          echo
+          echo "Memory:"
+          free -h
 
           echo
           echo "Disk:"
           df -h
 
-      # --------------------------------------------------------
-      # Create project directories if missing
-      # --------------------------------------------------------
+          echo
+          echo "Repository:"
+          pwd
 
-      - name: Create project structure
+          echo
+          echo "Top-level:"
+          ls -la
+
+
+      # ========================================================
+      # JAVA 17
+      # ========================================================
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+
+      - name: Verify Java
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
+
+          java -version
+
+          echo
+          echo "JAVA_HOME:"
+          echo "$JAVA_HOME"
+
+
+      # ========================================================
+      # ANDROID SDK
+      # ========================================================
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+
+      - name: Install Android SDK tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-${ANDROID_API}" \
+            "build-tools;${BUILD_TOOLS}" \
+            "ndk;${NDK_VERSION}" \
+            "cmake;${CMAKE_VERSION}"
+
+          yes | sdkmanager --licenses >/dev/null || true
+
+
+      # ========================================================
+      # ANDROID ENVIRONMENT
+      # ========================================================
+
+      - name: Configure Android environment
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          NDK_PATH="${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}"
+          CMAKE_PATH="${ANDROID_SDK_ROOT}/cmake/${CMAKE_VERSION}"
+
+          test -d "$NDK_PATH"
+          test -d "$CMAKE_PATH"
+
+          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=$NDK_PATH" >> "$GITHUB_ENV"
+
+          echo "$CMAKE_PATH/bin" >> "$GITHUB_PATH"
+
+          echo
+          echo "ANDROID_SDK_ROOT:"
+          echo "$ANDROID_SDK_ROOT"
+
+          echo
+          echo "NDK:"
+          echo "$NDK_PATH"
+
+          echo
+          echo "CMake:"
+          "$CMAKE_PATH/bin/cmake" --version
+
+          echo
+          echo "Installed Android packages:"
+          sdkmanager --list_installed | head -150
+
+
+      # ========================================================
+      # INSTALL LINUX BUILD DEPENDENCIES
+      # ========================================================
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            ninja-build \
+            lua5.4 \
+            unzip \
+            zip \
+            curl \
+            git \
+            file
+
+
+      # ========================================================
+      # VERIFY LUA
+      # ========================================================
+
+      - name: Verify Lua
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "Lua:"
+          lua5.4 -v
+
+          echo
+          echo "Lua compiler:"
+          luac5.4 -v
+
+
+      # ========================================================
+      # CREATE DIRECTORIES
+      # ========================================================
+
+      - name: Prepare project directories
+        shell: bash
+        run: |
+          set -euxo pipefail
 
           mkdir -p \
             android/app/src/main/java/com/zbr/game \
             android/app/src/main/res/values \
             android/app/src/main/cpp \
-            android/app/src/main/jniLibs/arm64-v8a \
             engine/src \
             engine/include \
             game/scripts \
             game/assets
 
-      # --------------------------------------------------------
-      # Android settings
-      # --------------------------------------------------------
+          echo "Directories ready."
 
-      - name: Generate Android settings
+
+      # ========================================================
+      # GENERATE ROOT SETTINGS ONLY IF MISSING
+      # ========================================================
+
+      - name: Create Gradle project files if missing
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          cat > settings.gradle.kts <<'EOF'
+          if [ ! -f settings.gradle.kts ]; then
+
+            cat > settings.gradle.kts <<'EOF'
           pluginManagement {
               repositories {
                   google()
@@ -126,53 +270,50 @@ jobs:
           rootProject.name = "ZombieBattleRoyale"
 
           include(":app")
+
           project(":app").projectDir = file("android/app")
           EOF
 
-      # --------------------------------------------------------
-      # Root Gradle
-      # --------------------------------------------------------
+          fi
 
-      - name: Generate root build.gradle.kts
-        shell: bash
-        run: |
-          set -eux
 
-          cat > build.gradle.kts <<'EOF'
+          if [ ! -f build.gradle.kts ]; then
+
+            cat > build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application") version "9.1.1" apply false
           }
           EOF
 
-      # --------------------------------------------------------
-      # Gradle properties
-      # --------------------------------------------------------
+          fi
 
-      - name: Generate gradle.properties
-        shell: bash
-        run: |
-          set -eux
 
-          cat > gradle.properties <<'EOF'
+          if [ ! -f gradle.properties ]; then
+
+            cat > gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
           org.gradle.daemon=false
           org.gradle.parallel=true
           org.gradle.caching=true
-
           android.useAndroidX=true
           android.nonTransitiveRClass=true
           EOF
 
-      # --------------------------------------------------------
-      # Android module
-      # --------------------------------------------------------
+          fi
 
-      - name: Generate Android app build.gradle.kts
+
+      # ========================================================
+      # CREATE ANDROID APP IF MISSING
+      # ========================================================
+
+      - name: Create Android application if missing
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          cat > android/app/build.gradle.kts <<'EOF'
+          if [ ! -f android/app/build.gradle.kts ]; then
+
+            cat > android/app/build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application")
           }
@@ -199,6 +340,10 @@ jobs:
               }
 
               buildTypes {
+                  debug {
+                      isMinifyEnabled = false
+                  }
+
                   release {
                       isMinifyEnabled = false
                       isShrinkResources = false
@@ -209,10 +354,6 @@ jobs:
                           ),
                           "proguard-rules.pro"
                       )
-                  }
-
-                  debug {
-                      isMinifyEnabled = false
                   }
               }
 
@@ -243,41 +384,45 @@ jobs:
           }
           EOF
 
-      - name: Generate ProGuard
-        shell: bash
-        run: |
-          set -eux
+          fi
 
-          cat > android/app/proguard-rules.pro <<'EOF'
-          # Native engine
+
+          if [ ! -f android/app/proguard-rules.pro ]; then
+
+            cat > android/app/proguard-rules.pro <<'EOF'
           -keep class com.zbr.game.** { *; }
           EOF
 
-      # --------------------------------------------------------
-      # Android Manifest
-      # --------------------------------------------------------
+          fi
 
-      - name: Generate AndroidManifest.xml
+
+      # ========================================================
+      # CREATE MANIFEST IF MISSING
+      # ========================================================
+
+      - name: Create Android manifest if missing
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          cat > android/app/src/main/AndroidManifest.xml <<'EOF'
+          if [ ! -f android/app/src/main/AndroidManifest.xml ]; then
+
+            cat > android/app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
 
           <manifest
               xmlns:android="http://schemas.android.com/apk/res/android">
 
+              <uses-permission
+                  android:name="android.permission.INTERNET" />
+
+              <uses-feature
+                  android:glEsVersion="0x00030000"
+                  android:required="false" />
+
               <uses-feature
                   android:name="android.hardware.vulkan.version"
                   android:required="false" />
-
-              <uses-feature
-                  android:name="android.hardware.opengles.aep"
-                  android:required="false" />
-
-              <uses-permission
-                  android:name="android.permission.INTERNET" />
 
               <application
                   android:allowBackup="false"
@@ -310,16 +455,21 @@ jobs:
           </manifest>
           EOF
 
-      # --------------------------------------------------------
-      # Theme
-      # --------------------------------------------------------
+          fi
 
-      - name: Generate Android theme
+
+      # ========================================================
+      # CREATE THEME IF MISSING
+      # ========================================================
+
+      - name: Create Android theme if missing
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          cat > android/app/src/main/res/values/styles.xml <<'EOF'
+          if [ ! -f android/app/src/main/res/values/styles.xml ]; then
+
+            cat > android/app/src/main/res/values/styles.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
 
           <resources>
@@ -331,7 +481,6 @@ jobs:
                   <item name="android:fontFamily">sans</item>
                   <item name="android:windowFullscreen">true</item>
                   <item name="android:windowActionModeOverlay">true</item>
-                  <item name="android:colorAccent">#FF0000</item>
                   <item name="android:navigationBarColor">#000000</item>
                   <item name="android:statusBarColor">#000000</item>
 
@@ -340,23 +489,27 @@ jobs:
           </resources>
           EOF
 
+          fi
+
+
       # ========================================================
-      # C++ ENGINE
+      # CREATE C++ ENGINE CMAKE IF MISSING
       # ========================================================
 
-      - name: Generate C++ engine CMake
+      - name: Create engine CMake if missing
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          cat > engine/CMakeLists.txt <<'EOF'
+          if [ ! -f engine/CMakeLists.txt ]; then
+
+            cat > engine/CMakeLists.txt <<'EOF'
           cmake_minimum_required(VERSION 3.22)
 
           project(ZombieBattleRoyaleEngine)
 
           set(CMAKE_CXX_STANDARD 20)
           set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
           set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
           add_library(
@@ -371,15 +524,8 @@ jobs:
               ${CMAKE_CURRENT_SOURCE_DIR}/include
           )
 
-          find_library(
-              log-lib
-              log
-          )
-
-          find_library(
-              android-lib
-              android
-          )
+          find_library(log-lib log)
+          find_library(android-lib android)
 
           target_link_libraries(
               zbr_engine
@@ -394,52 +540,28 @@ jobs:
           )
           EOF
 
-      - name: Generate C++ engine
+          fi
+
+
+      # ========================================================
+      # CREATE ENGINE SOURCE IF MISSING
+      # ========================================================
+
+      - name: Create C++ engine source if missing
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          cat > engine/src/Engine.cpp <<'EOF'
+          if [ ! -f engine/src/Engine.cpp ]; then
+
+            cat > engine/src/Engine.cpp <<'EOF'
           #include <jni.h>
           #include <android/log.h>
           #include <atomic>
 
-          #define LOG_TAG "ZBR_ENGINE"
+          #define ZBR_LOG_TAG "ZBR_ENGINE"
 
-          #define LOGI(...) \
-              __android_log_print(
-                  ANDROID_LOG_INFO,
-                  LOG_TAG,
-                  __VA_ARGS__
-              )
-
-          namespace zbr {
-
-          class Engine {
-          public:
-
-              void start() {
-                  running.store(true);
-                  LOGI("Zombie Battle Royale Engine started");
-              }
-
-              void stop() {
-                  running.store(false);
-                  LOGI("Zombie Battle Royale Engine stopped");
-              }
-
-              bool isRunning() const {
-                  return running.load();
-              }
-
-          private:
-
-              std::atomic<bool> running{false};
-          };
-
-          static Engine engine;
-
-          }
+          static std::atomic<bool> g_running{false};
 
           extern "C"
           JNIEXPORT void JNICALL
@@ -447,8 +569,15 @@ jobs:
               JNIEnv*,
               jobject) {
 
-              zbr::engine.start();
+              g_running.store(true);
+
+              __android_log_print(
+                  ANDROID_LOG_INFO,
+                  ZBR_LOG_TAG,
+                  "Engine started"
+              );
           }
+
 
           extern "C"
           JNIEXPORT void JNICALL
@@ -456,8 +585,15 @@ jobs:
               JNIEnv*,
               jobject) {
 
-              zbr::engine.stop();
+              g_running.store(false);
+
+              __android_log_print(
+                  ANDROID_LOG_INFO,
+                  ZBR_LOG_TAG,
+                  "Engine stopped"
+              );
           }
+
 
           extern "C"
           JNIEXPORT jboolean JNICALL
@@ -465,28 +601,34 @@ jobs:
               JNIEnv*,
               jobject) {
 
-              return zbr::engine.isRunning()
+              return g_running.load()
                   ? JNI_TRUE
                   : JNI_FALSE;
           }
           EOF
 
+          fi
+
+
       # ========================================================
-      # ANDROID JNI CMAKE
+      # CREATE ANDROID NATIVE CMAKE
       # ========================================================
 
-      - name: Generate Android CMake
+      - name: Create Android native CMake if missing
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          cat > android/app/src/main/cpp/CMakeLists.txt <<'EOF'
+          if [ ! -f android/app/src/main/cpp/CMakeLists.txt ]; then
+
+            cat > android/app/src/main/cpp/CMakeLists.txt <<'EOF'
           cmake_minimum_required(VERSION 3.22)
 
           project(ZombieBattleRoyaleAndroid)
 
           set(CMAKE_CXX_STANDARD 20)
           set(CMAKE_CXX_STANDARD_REQUIRED ON)
+          set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
           set(ENGINE_DIR
               ${CMAKE_CURRENT_LIST_DIR}/../../../../../engine
@@ -504,15 +646,8 @@ jobs:
               ${ENGINE_DIR}/include
           )
 
-          find_library(
-              log-lib
-              log
-          )
-
-          find_library(
-              android-lib
-              android
-          )
+          find_library(log-lib log)
+          find_library(android-lib android)
 
           target_link_libraries(
               zbr_engine
@@ -521,16 +656,21 @@ jobs:
           )
           EOF
 
+          fi
+
+
       # ========================================================
-      # ANDROID ACTIVITY
+      # CREATE MAIN ACTIVITY IF MISSING
       # ========================================================
 
-      - name: Generate MainActivity.java
+      - name: Create MainActivity if missing
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          cat > android/app/src/main/java/com/zbr/game/MainActivity.java <<'EOF'
+          if [ ! -f android/app/src/main/java/com/zbr/game/MainActivity.java ]; then
+
+            cat > android/app/src/main/java/com/zbr/game/MainActivity.java <<'EOF'
           package com.zbr.game;
 
           import android.app.Activity;
@@ -561,32 +701,31 @@ jobs:
                       android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN
                   );
 
-                  getWindow().getDecorView().setSystemUiVisibility(
-                      View.SYSTEM_UI_FLAG_FULLSCREEN
-                      | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                      | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                      | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                      | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                      | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                  );
+                  getWindow()
+                      .getDecorView()
+                      .setSystemUiVisibility(
+                          View.SYSTEM_UI_FLAG_FULLSCREEN
+                          | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                          | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                          | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                          | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                          | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                      );
 
                   nativeStart();
 
                   TextView view = new TextView(this);
 
                   view.setText(
-                      "ZOMBIE BATTLE ROYALE\\n\\n" +
-                      "C++ ENGINE ONLINE\\n" +
-                      "ARM64 • ANDROID\\n\\n" +
-                      "Custom Engine + Lua"
+                      "ZOMBIE BATTLE ROYALE\n\n" +
+                      "C++ ENGINE ONLINE\n" +
+                      "ARM64 • ANDROID\n\n" +
+                      "CUSTOM ENGINE + LUA"
                   );
 
                   view.setTextColor(Color.WHITE);
-
                   view.setTextSize(22);
-
                   view.setGravity(Gravity.CENTER);
-
                   view.setBackgroundColor(Color.BLACK);
 
                   setContentView(view);
@@ -594,6 +733,7 @@ jobs:
 
               @Override
               protected void onDestroy() {
+
                   nativeStop();
 
                   super.onDestroy();
@@ -601,36 +741,42 @@ jobs:
           }
           EOF
 
+          fi
+
+
       # ========================================================
-      # LUA
+      # LUA FILES IF MISSING
       # ========================================================
 
-      - name: Generate Lua gameplay scripts
+      - name: Create Lua gameplay files if missing
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          cat > game/scripts/game.lua <<'EOF'
+          if [ ! -f game/scripts/game.lua ]; then
+
+            cat > game/scripts/game.lua <<'EOF'
           local Game = {}
 
           Game.name = "Zombie Battle Royale"
 
           Game.maxPlayers = 30
 
-          Game.zombieEnabled = true
+          Game.zombiesEnabled = true
 
-          Game.startMatch = function()
-              print("Match started")
-              print("Players: " .. Game.maxPlayers)
-              print("Zombie system: enabled")
+          function Game.startMatch()
+              print("Zombie Battle Royale match started")
           end
-
-          Game.startMatch()
 
           return Game
           EOF
 
-          cat > game/scripts/weapons.lua <<'EOF'
+          fi
+
+
+          if [ ! -f game/scripts/weapons.lua ]; then
+
+            cat > game/scripts/weapons.lua <<'EOF'
           local Weapons = {}
 
           Weapons.assault_rifle = {
@@ -648,217 +794,135 @@ jobs:
           return Weapons
           EOF
 
-          cat > game/scripts/zombies.lua <<'EOF'
+          fi
+
+
+          if [ ! -f game/scripts/zombies.lua ]; then
+
+            cat > game/scripts/zombies.lua <<'EOF'
           local Zombies = {}
 
           Zombies.maxAlive = 100
 
-          Zombies.spawn = function(x, y, z)
+          function Zombies.spawn(x, y, z)
+
               return {
                   x = x,
                   y = y,
                   z = z,
                   health = 100
               }
+
           end
 
           return Zombies
           EOF
 
+          fi
+
+
       # ========================================================
-      # GRADLE WRAPPER / DISTRIBUTION
+      # LUA VALIDATION
       # ========================================================
 
-      - name: Install Gradle
+      - name: Validate Lua scripts
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          mkdir -p "$HOME/.gradle/wrapper/dists"
+          echo "=========================================="
+          echo " LUA VALIDATION"
+          echo "=========================================="
 
-          if ! command -v gradle >/dev/null 2>&1; then
+          LUA_COUNT=0
 
-            curl -fL \
-              --retry 5 \
-              --retry-all-errors \
-              -o /tmp/gradle.zip \
-              "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          while IFS= read -r -d '' file; do
 
-            sudo unzip -q \
-              /tmp/gradle.zip \
-              -d /opt
+              LUA_COUNT=$((LUA_COUNT + 1))
 
-            sudo ln -sf \
-              "/opt/gradle-${GRADLE_VERSION}/bin/gradle" \
-              /usr/local/bin/gradle
+              echo
+              echo "Checking:"
+              echo "$file"
+
+              luac5.4 -p "$file"
+
+              echo "PASS: $file"
+
+          done < <(
+              find game/scripts \
+                  -type f \
+                  -name "*.lua" \
+                  -print0
+          )
+
+          echo
+          echo "Lua files checked: $LUA_COUNT"
+
+          if [ "$LUA_COUNT" -eq 0 ]; then
+              echo "::warning::No Lua files found."
+          fi
+
+          echo
+          echo "Lua validation: PASS"
+
+
+      # ========================================================
+      # DOWNLOAD GRADLE
+      # ========================================================
+
+      - name: Install Gradle 9.3.1
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          GRADLE_DIR="$HOME/gradle-${GRADLE_VERSION}"
+
+          if [ ! -x "$GRADLE_DIR/bin/gradle" ]; then
+
+              rm -f /tmp/gradle.zip
+
+              curl \
+                --fail \
+                --show-error \
+                --location \
+                --retry 5 \
+                --retry-delay 2 \
+                --retry-all-errors \
+                -o /tmp/gradle.zip \
+                "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+
+              rm -rf "$GRADLE_DIR"
+
+              unzip \
+                -q \
+                /tmp/gradle.zip \
+                -d "$HOME"
 
           fi
 
-          gradle --version
+          echo "$GRADLE_DIR/bin" >> "$GITHUB_PATH"
+
+          "$GRADLE_DIR/bin/gradle" --version
+
 
       # ========================================================
-      # LUA INSTALL
+      # PROJECT VALIDATION
       # ========================================================
 
-      - name: Install Lua
+      - name: Validate complete project
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          sudo apt-get update
-
-          sudo apt-get install -y \
-            lua5.4 \
-            ninja-build
-
-          lua5.4 -v
-
-      # ========================================================
-      # UPLOAD PREPARED PROJECT
-      # ========================================================
-
-      - name: Upload prepared project
-        uses: actions/upload-artifact@v7
-        with:
-          name: prepared-zombie-project
-          path: |
-            android/**
-            engine/**
-            game/**
-            build.gradle.kts
-            settings.gradle.kts
-            gradle.properties
-          if-no-files-found: error
-          retention-days: 1
-
-
-  # ============================================================
-  # 2. BUILD
-  # ============================================================
-
-  build:
-    name: Build ARM64 Release APK
-    runs-on: ubuntu-latest
-    needs: prepare
-
-    steps:
-
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Download prepared project
-        uses: actions/download-artifact@v8
-        with:
-          name: prepared-zombie-project
-          path: .
-
-      # --------------------------------------------------------
-      # Java
-      # --------------------------------------------------------
-
-      - name: Setup JDK 17
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-
-      # --------------------------------------------------------
-      # Android SDK
-      # --------------------------------------------------------
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Install Android SDK
-        shell: bash
-        run: |
-          set -eux
-
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-${ANDROID_API}" \
-            "build-tools;${BUILD_TOOLS}" \
-            "ndk;${NDK_VERSION}" \
-            "cmake;${CMAKE_VERSION}"
-
-          yes | sdkmanager --licenses >/dev/null || true
-
-      # --------------------------------------------------------
-      # Environment
-      # --------------------------------------------------------
-
-      - name: Configure Android environment
-        shell: bash
-        run: |
-          set -eux
-
-          export NDK_PATH="${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}"
-
-          test -d "$NDK_PATH"
-
-          test -d \
-            "${ANDROID_SDK_ROOT}/cmake/${CMAKE_VERSION}"
-
-          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> "$GITHUB_ENV"
-
-          echo "ANDROID_NDK=$NDK_PATH" >> "$GITHUB_ENV"
-
-          echo \
-            "${ANDROID_SDK_ROOT}/cmake/${CMAKE_VERSION}/bin" \
-            >> "$GITHUB_PATH"
-
-          echo "Android SDK:"
-          echo "$ANDROID_SDK_ROOT"
-
-          echo "NDK:"
-          echo "$NDK_PATH"
-
-          echo "CMake:"
-          cmake --version
-
-      # --------------------------------------------------------
-      # Validate Lua
-      # --------------------------------------------------------
-
-      - name: Validate Lua
-        shell: bash
-        run: |
-          set -eux
-
-          find game/scripts \
-            -type f \
-            -name "*.lua" \
-            -print0 |
-          while IFS= read -r -d '' file; do
-
-              echo "Checking Lua:"
-              echo "$file"
-
-              lua5.4 \
-                -e "assert(loadfile('$file'))"
-
-          done
-
-          echo "Lua validation: PASS"
-
-      # --------------------------------------------------------
-      # Check project
-      # --------------------------------------------------------
-
-      - name: Validate Android project
-        shell: bash
-        run: |
-          set -eux
+          echo "=========================================="
+          echo " PROJECT VALIDATION"
+          echo "=========================================="
 
           test -f settings.gradle.kts
-
           test -f build.gradle.kts
-
           test -f gradle.properties
 
           test -f android/app/build.gradle.kts
-
           test -f android/app/src/main/AndroidManifest.xml
 
           test -f \
@@ -867,20 +931,25 @@ jobs:
           test -f \
             android/app/src/main/cpp/CMakeLists.txt
 
+          test -f engine/CMakeLists.txt
           test -f engine/src/Engine.cpp
 
           test -d game
+          test -d game/scripts
+          test -d game/assets
 
-          echo "Android project validation: PASS"
+          echo
+          echo "Project validation: PASS"
 
-      # --------------------------------------------------------
-      # Build native engine test
-      # --------------------------------------------------------
 
-      - name: Configure native engine
+      # ========================================================
+      # STANDALONE C++ ENGINE TEST
+      # ========================================================
+
+      - name: Configure standalone C++ engine
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
           rm -rf build/native
 
@@ -896,10 +965,11 @@ jobs:
             -DCMAKE_CXX_STANDARD_REQUIRED=ON \
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 
-      - name: Build native engine test
+
+      - name: Build standalone C++ engine
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
           cmake \
             --build build/native \
@@ -914,133 +984,200 @@ jobs:
             \( -name "*.so" -o -name "*.a" \) \
             -print
 
-      # --------------------------------------------------------
-      # Android build
-      # --------------------------------------------------------
 
-      - name: Build Release APK
+      # ========================================================
+      # ANDROID GRADLE BUILD
+      # ========================================================
+
+      - name: Build Android Release APK
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
           gradle \
             --no-daemon \
             --stacktrace \
-            --info \
+            --warning-mode all \
             assembleRelease
 
-      # --------------------------------------------------------
-      # APK check
-      # --------------------------------------------------------
 
-      - name: Find APK
+      # ========================================================
+      # LOCATE APK
+      # ========================================================
+
+      - name: Locate APK
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
+
+          echo "APK files:"
 
           find . \
             -type f \
             -name "*.apk" \
             -print
 
-          APK_COUNT=$(find . -type f -name "*.apk" | wc -l)
+          APK_COUNT=$(
+            find . \
+              -type f \
+              -name "*.apk" \
+              | wc -l
+          )
 
           if [ "$APK_COUNT" -lt 1 ]; then
 
-              echo "::error::APK was not generated"
+              echo "::error::No APK generated."
 
               exit 1
 
           fi
 
           echo
-          echo "APK COUNT:"
+          echo "APK count:"
           echo "$APK_COUNT"
 
-      - name: Check APK
+
+      # ========================================================
+      # CHECK ARM64 APK
+      # ========================================================
+
+      - name: Verify APK
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
 
-          APK=$(find android \
-            -type f \
-            -name "*release*.apk" \
-            | head -1)
+          APK=$(
+            find android \
+              -type f \
+              -name "*release*.apk" \
+              | head -n 1
+          )
+
+          if [ -z "$APK" ]; then
+
+              APK=$(
+                find . \
+                  -type f \
+                  -name "*.apk" \
+                  | head -n 1
+              )
+
+          fi
 
           test -n "$APK"
 
           echo "APK:"
           echo "$APK"
 
+          echo
+          echo "Size:"
           ls -lh "$APK"
+
+          echo
+          echo "APK summary:"
 
           "${ANDROID_SDK_ROOT}/build-tools/${BUILD_TOOLS}/apkanalyzer" \
             apk summary \
             "$APK" || true
 
-      # --------------------------------------------------------
-      # Copy final APK
-      # --------------------------------------------------------
 
-      - name: Prepare final APK
+      # ========================================================
+      # PREPARE FINAL APK
+      # ========================================================
+
+      - name: Prepare release artifact
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
+
+          rm -rf release
 
           mkdir -p release
 
-          APK=$(find android \
-            -type f \
-            -name "*release*.apk" \
-            | head -1)
+          APK=$(
+            find android \
+              -type f \
+              -name "*release*.apk" \
+              | head -n 1
+          )
+
+          if [ -z "$APK" ]; then
+
+              APK=$(
+                find . \
+                  -type f \
+                  -name "*.apk" \
+                  | head -n 1
+              )
+
+          fi
 
           test -n "$APK"
 
-          cp "$APK" \
+          cp \
+            "$APK" \
             "release/ZombieBattleRoyale-arm64-release.apk"
 
           echo
           echo "FINAL APK:"
           ls -lh release/
 
-      # --------------------------------------------------------
-      # Upload
-      # --------------------------------------------------------
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v7
+      # ========================================================
+      # UPLOAD APK
+      # ========================================================
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v6
         with:
           name: ZombieBattleRoyale-Android-ARM64
           path: release/ZombieBattleRoyale-arm64-release.apk
           if-no-files-found: error
           retention-days: 14
 
-      # --------------------------------------------------------
-      # Report
-      # --------------------------------------------------------
 
-      - name: Build report
+      # ========================================================
+      # UPLOAD NATIVE BUILD
+      # ========================================================
+
+      - name: Upload native engine
+        uses: actions/upload-artifact@v6
+        with:
+          name: ZombieBattleRoyale-Native-ARM64
+          path: build/native/**
+          if-no-files-found: error
+          retention-days: 7
+
+
+      # ========================================================
+      # FINAL REPORT
+      # ========================================================
+
+      - name: Final build report
         if: always()
         shell: bash
         run: |
           echo
-          echo "=============================================="
+          echo "=================================================="
           echo " ZOMBIE BATTLE ROYALE BUILD REPORT"
-          echo "=============================================="
+          echo "=================================================="
           echo
+          echo "Java        : ${JAVA_VERSION}"
           echo "Android API : ${ANDROID_API}"
           echo "Build Tools : ${BUILD_TOOLS}"
           echo "NDK         : ${NDK_VERSION}"
           echo "CMake       : ${CMAKE_VERSION}"
+          echo "Gradle      : ${GRADLE_VERSION}"
+          echo "AGP         : ${AGP_VERSION}"
           echo "ABI         : ${ANDROID_ABI}"
           echo "Min SDK     : ${MIN_SDK}"
           echo "Target SDK  : ${TARGET_SDK}"
-          echo "Build       : ${BUILD_TYPE}"
+          echo "Build Type  : ${BUILD_TYPE}"
           echo
           echo "Disk:"
           df -h
           echo
-          echo "APK:"
+          echo "Release:"
           ls -lh release/ 2>/dev/null || true
           echo
-          echo "=============================================="
+          echo "=================================================="
